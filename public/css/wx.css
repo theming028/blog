@@ -1,0 +1,352 @@
+/* ============ 微信朋友圈风格 · 基础 ============ */
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  background: var(--wx-bg);
+  font-size: 14px;
+  font-family: "Mona Sans VF", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Backtick Fix", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  color: #191919;
+}
+:root {
+  --wx-blue: #576B95;
+  --wx-blue-deep: #465577; /* 主按钮按下/悬停用 */
+  --wx-text: #191919;
+  --wx-gray: #B2B2B2;
+  --wx-box: #F7F7F7;
+  --wx-bg: #F5F5F5;   /* 页面灰底：body 与 blogroll 共用一个值，不再各写一份字面量 */
+  --wx-line: #E7E7E7;
+  --wx-green: #07C160;
+  --wx-red: #FA5151;
+}
+img { -webkit-user-drag: none; }
+a { text-decoration: none; color: inherit; }
+button { font-family: inherit; }
+/* 表单控件默认不继承字体，显式继承，全局字体栈才会覆盖输入框 */
+input, textarea, select { font-family: inherit; }
+
+.phone {
+  max-width: 640px;
+  margin: 0 auto;
+  min-height: 100vh;      /* 不支持 dvh 的旧内核兜底 */
+  min-height: 100dvh;     /* 移动浏览器地址栏收放后真实可见高度，避免底部内容被遮 */
+  background: #fff;
+  position: relative;
+}
+
+/* ============ 顶部导航栏 ============ */
+.nav {
+  position: fixed; top: 0; left: 0; right: 0; margin: 0 auto;
+  width: 100%; max-width: 640px;
+  /* viewport-fit=cover 下必须自己让出刘海/状态栏高度，否则标题被压住 */
+  height: calc(44px + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
+  background: rgba(24, 24, 24, .55);
+  -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%);
+  z-index: 100; color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 600;
+  cursor: pointer; /* 整条标题栏可点回顶部（仅在未滚动、导航可见时） */
+  opacity: 1;
+  transition: opacity .25s ease, visibility .25s ease;
+}
+/* 开始滚动即整条渐隐。visibility 是为了隐藏后不再接收点击、也不被键盘聚焦；
+ * 只靠 opacity 会留下一层"看不见但点得到"的透明挡板。 */
+.nav.hide { opacity: 0; visibility: hidden; }
+.nav .nav-btn {
+  position: absolute; top: env(safe-area-inset-top); width: 44px; height: 44px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+.nav .nav-btn svg { width: 22px; height: 22px; fill: #fff; }
+.nav .right { right: 0; }
+/* 无左槽按钮，原 .nav .left 规则已删 */
+.nav .nav-txt {
+  position: absolute; right: 14px; color: var(--wx-green);
+  font-size: 15px; font-weight: 500; cursor: pointer;
+}
+
+/* ============ 封面 ============ */
+.cover { position: relative; height: 280px; background: #26282B; }
+/* 槽位是 640×280 横条，原图 918×1128 竖构图，object-fit:cover 默认居中只保留
+   画面 37%–62% —— 骑车人和狗（在底部约 85% 处）会被整块裁掉。这张封面必须贴底取。
+   ⚠️ 以后若换成主体居中的照片，要把这里改回 center。 */
+.cover .cover-img { width: 100%; height: 100%; object-fit: cover; object-position: center bottom; display: block; }
+.cover .cover-name {
+  position: absolute; right: 105px; bottom: 8px;
+  max-width: 62%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: #fff; font-size: 16px; font-weight: 600;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, .45);
+}
+.cover .cover-sign {
+  position: absolute; right: 105px; bottom: -24px;
+  max-width: 62%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  /* #7A7A7A 在白底上只有 4.29:1，不达 WCAG AA；#6A6A6A 为 5.41:1 */
+  color: #6A6A6A; font-size: 12px; font-weight: 400;
+}
+.cover .cover-avatar {
+  position: absolute; right: 24px; bottom: -34px;
+  width: 68px; height: 68px; border-radius: 6px;
+  border: 2px solid #fff; object-fit: cover; background: #fff;
+}
+.feed { padding-top: calc(46px + env(safe-area-inset-top)); }
+
+/* ============ 朋友圈条目 ============ */
+/* 信息流分隔线单独比 --wx-line(#E7E7E7) 再浅一档；不动 token，避免连带改浅后台列表线 */
+.post { display: flex; padding: 24px; background: #fff; border-bottom: .5px solid #F0F0F0; }
+.p-avatar { width: 42px; height: 42px; border-radius: 6px; margin-right: 12px; flex: none; object-fit: cover; background: #D8D8D8; }
+.p-body { flex: 1; min-width: 0; }
+.p-name { color: var(--wx-blue); font-size: 14px; font-weight: 600; line-height: 1.4; margin-bottom: 4px; display: inline-block; }
+.p-text { font-size: 14px; line-height: 1.55; color: var(--wx-text); white-space: pre-wrap; word-break: break-word; }
+
+.p-grid { margin-top: 8px; display: grid; gap: 5px; grid-template-columns: repeat(3, 1fr); }
+.p-grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
+.p-grid img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; cursor: zoom-in; background: #F2F2F2; }
+.p-single img { max-width: 232px; max-height: 320px; width: auto; height: auto; display: block; cursor: zoom-in; margin-top: 8px; background: #F2F2F2; }
+
+.p-location { display: inline-flex; align-items: center; gap: 3px; color: var(--wx-blue); font-size: 12px; margin-top: 8px; cursor: default; }
+.p-location svg { width: 12px; height: 12px; fill: var(--wx-blue); }
+
+.p-foot { display: flex; align-items: center; margin-top: 6px; min-height: 26px; position: relative; }
+.p-time { color: var(--wx-gray); font-size: 12px; }
+.p-toggle {
+  margin-left: auto; background: var(--wx-box); border-radius: 4px;
+  width: 28px; height: 18px; display: flex; align-items: center; justify-content: center; gap: 3px;
+  cursor: pointer; flex: none; transition: background .15s; position: relative;
+}
+/* 视觉仍是 28×18，但把可点区域撑到 44×44，手机上才点得中（点赞/评论的唯一入口） */
+.p-toggle::after {
+  content: ""; position: absolute; left: 50%; top: 50%;
+  width: 44px; height: 44px; transform: translate(-50%, -50%);
+}
+.p-toggle i { width: 4px; height: 4px; border-radius: 50%; background: #687B93; transition: background .15s; }
+.p-toggle.on { background: #5B6B84; }
+.p-toggle.on i { background: #fff; }
+
+/* 点赞/评论 深色气泡 */
+.pop {
+  position: absolute; right: 34px; top: 50%; margin-top: -17px; z-index: 30;
+  background: #4C4C4C; border-radius: 5px; display: flex; color: #fff;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, .25);
+  animation: popin .13s ease-out; transform-origin: right center;
+}
+@keyframes popin { from { opacity: 0; transform: scale(.85); } }
+.pop::before {
+  content: ""; position: absolute; right: -3.5px; top: 50%; margin-top: -4px;
+  width: 8px; height: 8px; background: #4C4C4C; transform: rotate(45deg); border-radius: 1px;
+}
+.pop-item { display: flex; align-items: center; gap: 6px; padding: 9px 18px; font-size: 14px; white-space: nowrap; cursor: pointer; }
+.pop-item + .pop-item { border-left: .5px solid rgba(255, 255, 255, .22); }
+.pop-item svg { width: 17px; height: 17px; fill: #fff; flex: none; }
+
+/* 点赞评论灰盒 */
+.acts { background: var(--wx-box); border-radius: 4px; margin-top: 8px; position: relative; font-size: 13px; }
+.acts::before {
+  content: ""; position: absolute; top: -4px; right: 14px;
+  width: 8px; height: 8px; background: var(--wx-box); transform: rotate(45deg); border-radius: 1px;
+}
+.like-row { display: flex; padding: 7px 10px; align-items: flex-start; }
+.like-row svg { width: 16px; height: 16px; fill: var(--wx-blue); margin-right: 7px; margin-top: 3px; flex: none; }
+.like-names { color: var(--wx-blue); line-height: 1.5; word-break: break-all; }
+.acts-sep { height: .5px; background: #E5E5E5; margin: 0 10px; }
+.cmt-list { padding: 5px 10px 8px; }
+.cmt { line-height: 1.55; color: var(--wx-text); padding: 2px 0; cursor: pointer; word-break: break-word; }
+.cmt .nm, .cmt .rn { color: var(--wx-blue); }
+.cmt-body { display: inline; } /* 行内盒：编辑/删除 才能紧跟正文同一行，不换行 */
+.cmt-more { display: inline; color: var(--wx-blue); font-style: normal; font-size: 13px; cursor: pointer; }
+.cmt-ops { margin-left: 12px; white-space: nowrap; }
+.cmt-op { font-style: normal; font-size: 12px; color: var(--wx-blue); margin-left: 10px; cursor: pointer; }
+.cmt-op.danger { color: var(--wx-blue); }      /* 平时与普通操作一致 */
+.cmt-op.danger:hover { color: var(--wx-red); } /* 悬停才示警 */
+.cmt-op.danger:active { color: var(--wx-red); } /* 触屏无 hover，按下时同样示警 */
+
+/* 轻量 toast */
+/* 评论栏已改为行内展示，toast 不再需要为固定底栏留出 76px 间距 */
+.toast {
+  position: fixed; left: 50%; bottom: calc(34px + env(safe-area-inset-bottom)); transform: translateX(-50%) translateY(16px);
+  background: rgba(0, 0, 0, .8); color: #fff; font-size: 14px; padding: 9px 16px; border-radius: 6px;
+  opacity: 0; pointer-events: none; transition: opacity .25s, transform .25s; z-index: 260; max-width: 80vw; text-align: center;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ============ 评论表单：昵称 + 个人主页 + 评论内容同框（挂在对应朋友圈的 acts 内） ============ */
+.cbar {
+  display: none; position: relative;
+  padding: 9px 10px;
+  border-top: .5px solid #E5E5E5;
+}
+.cbar.show { display: block; }
+.cbar input, .cbar textarea { font-size: 13px; outline: none; }
+.cbar-id { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.cbar-id input {
+  flex: 1 1 110px; min-width: 0; height: 32px; padding: 0 10px;
+  border: .5px solid #D9D9D9; border-radius: 4px; background: #fff;
+}
+.cbar-id input:focus { border-color: #B9B9B9; }
+/* 表情按钮在输入框内独占一行（落在文本行下方），而不是与文本并排各占一列 */
+.cbar-field {
+  position: relative; /* 表情面板以输入框为锚点，而不是整张表单 */
+  flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: stretch;
+  background: #fff; border: .5px solid #D9D9D9; border-radius: 4px; padding-left: 10px;
+}
+.cbar-field:focus-within { border-color: #B9B9B9; }
+/* 单行正好 32px（18 行高 + 上下 7px）；多行由 JS 按 scrollHeight 撑高，
+   超过 max-height 后框内滚动，120px 这个值同时是 JS 读取的钳位上限。
+   flex:none 是必须的：flex:1 会把 flex-basis 归零，让 JS 写入的内联高度失效 */
+.cbar-field textarea {
+  flex: none; width: 100%; height: 32px; max-height: 120px;
+  border: 0; background: transparent; padding: 7px 0; line-height: 18px;
+  resize: none; overflow-y: hidden; font-family: inherit;
+}
+/* 发送/取消自成一行为，两键一起靠右下；靠右后两键间距用左内边距撑，不再依赖 gap */
+.cbar-acts { display: flex; align-items: center; justify-content: flex-end; margin-top: 8px; }
+.cbar-err { display: none; color: var(--wx-red); font-size: 12px; margin-top: 7px; }
+.cbar-err.show { display: block; }
+#cbarSend, #cbarCancel {
+  flex: none; height: 32px; padding: 0 16px; border-radius: 4px;
+  border: .5px solid #D9D9D9; background: #fff;
+  color: #A6A6A6; font-size: 13px; cursor: pointer; white-space: nowrap;
+}
+#cbarCancel { color: var(--wx-text); margin-right: 8px; }
+/* 发送=主题蓝实心主按钮。不给"未填内容"加半透明：叠加在灰盒上会把白字对比度
+   从 5.33:1 拉到 2.33:1，实测降到 .8 也仍只有 3.62:1，一律不达 AA。
+   空内容的反馈交给内联错误提示；JS 仍切换 .on 类，日后要做置态只需加一条规则。 */
+#cbarSend { color: #fff; background: var(--wx-blue); border-color: transparent; }
+#cbarSend:hover { background: var(--wx-blue-deep); }
+#cbarSend:active { background: var(--wx-blue-deep); }
+.cbar-emoji {
+  align-self: flex-start; flex: none; width: 26px; height: 26px; margin: 0 0 3px -2px;
+  padding: 0; border: 0; background: transparent; border-radius: 4px;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.cbar-emoji:hover { background: #F0F0F0; }
+.cbar-emoji svg { width: 22px; height: 22px; fill: #7A7A7A; }
+/* 以 .cbar-field 为锚：面板左右与输入框边缘齐平，底边距输入框 8px。
+   绝对定位的可包含块是祖先的 padding box，所以 left/right 归零即与框边对齐，
+   不受该框 padding-left: 10px 影响 */
+.emoji-panel {
+  display: none; position: absolute; left: 0; right: 0; bottom: calc(100% + 8px);
+  background: #fff; border: .5px solid #E2E2E2; border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .12); padding: 8px; max-height: 190px; overflow-y: auto;
+  grid-template-columns: repeat(8, 1fr); z-index: 140;
+}
+.emoji-panel.show { display: grid; }
+.emoji-cell { font-size: 22px; text-align: center; padding: 4px 0; cursor: pointer; border-radius: 4px; line-height: 1.2; }
+.emoji-cell:hover { background: #F0F0F0; }
+
+/* 分页页码 */
+.pager { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 20px 0 6px; flex-wrap: wrap; }
+.pager .pg-num, .pager .pg-arrow {
+  min-width: 30px; height: 30px; padding: 0 6px; border-radius: 4px; background: #fff;
+  border: .5px solid #DCDCDC; color: var(--wx-text); font-size: 14px;
+  display: flex; align-items: center; justify-content: center; cursor: pointer; user-select: none;
+}
+.pager .pg-num.cur { background: var(--wx-blue); border-color: var(--wx-blue); color: #fff; }
+.pager .pg-arrow.disabled { color: #C9C9C9; pointer-events: none; }
+.pager .pg-num:hover:not(.cur) { background: #F2F2F2; }
+
+/* ============ 大图查看器 ============ */
+.viewer {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, .82); z-index: 300;
+  display: none; align-items: center; justify-content: center;
+  cursor: zoom-out; /* 整屏（除底部翻页按钮外）都可点关闭 */
+  /* 高斯模糊蒙层：与顶部导航同一手法，-webkit- 前缀是给旧版 Safari 的 */
+  -webkit-backdrop-filter: blur(20px) saturate(120%); backdrop-filter: blur(20px) saturate(120%);
+}
+.viewer.show { display: flex; }
+.viewer img { max-width: 100vw; max-height: 100vh; max-height: 100dvh; object-fit: contain; user-select: none; touch-action: pan-y; }
+/* pointer-events:none 让这条横跨全宽的计数条不吞掉点击，顶部黑边才能用来关闭预览 */
+.v-count { position: absolute; top: calc(14px + env(safe-area-inset-top)); left: 0; right: 0; text-align: center; color: rgba(255,255,255,.9); font-size: 15px; z-index: 2; pointer-events: none; }
+.v-close { position: absolute; top: calc(8px + env(safe-area-inset-top)); left: calc(8px + env(safe-area-inset-left)); width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 3; }
+.v-close svg { width: 22px; height: 22px; fill: rgba(255,255,255,.85); }
+/* 翻页按钮放在画面底部中间，不再用两侧 28% 的隐形热区压在图片上：
+   热区会吞掉落在图片左右部分的点击（那些点击本该是"关闭预览"）*/
+.v-nav {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  bottom: calc(22px + env(safe-area-inset-bottom));
+  display: flex; gap: 16px; z-index: 3;
+}
+.v-arrow {
+  flex: none; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%;
+  background: rgba(255, 255, 255, .16);
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  transition: background .15s ease;
+}
+.v-arrow:hover { background: rgba(255, 255, 255, .3); }
+.v-arrow:active { background: rgba(255, 255, 255, .38); }
+.v-arrow svg {
+  width: 24px; height: 24px; fill: none;
+  stroke: rgba(255, 255, 255, .92); stroke-width: 2.2;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+/* 单图没有可翻的页，不显示翻页条 */
+.viewer.single .v-nav { display: none; }
+
+/* ============ 弹窗 ============ */
+.mask {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, .45); z-index: 400;
+  display: none; align-items: center; justify-content: center;
+}
+.mask.show { display: flex; }
+.dlg { width: 280px; background: #fff; border-radius: 12px; overflow: hidden; text-align: center; animation: popin .15s ease-out; }
+.dlg-msg { padding: 24px 22px 22px; font-size: 13px; line-height: 1.55; color: var(--wx-text); }
+/* .dlg-title / .dlg-input 已随"昵称独立弹窗"一起删除——前台只剩确认与提示两种弹窗，均不用它们 */
+.dlg-btns { display: flex; border-top: .5px solid #E5E5E5; }
+.dlg-btns button { flex: 1; height: 44px; background: #fff; border: 0; font-size: 14px; color: var(--wx-text); cursor: pointer; }
+.dlg-btns button + button { border-left: .5px solid #E5E5E5; }
+.dlg-btns .primary { color: var(--wx-blue); font-weight: 600; }
+
+/* ============ 辅助 ============ */
+/* 发布运行时注入的 mulepage 水印：CSS 只按确切名字兜底隐藏，
+   不用 [class*="mulepage"]——万一平台把整页包在 mulepage 容器里会连正文一起藏掉，
+   宽泛的子串匹配交给 common.js 带保护地移除 */
+#mulepage-footer, .mulepage-footer { display: none !important; }
+.loading { text-align: center; color: var(--wx-gray); font-size: 13px; padding: 40px 0; }
+.copyright { text-align: center; color: #B8B8B8; font-size: 12px; line-height: 1.8; padding: 20px 16px 40px; }
+
+/* 网上邻居（友情链接）— 纯文字链接，无分割线；用页面灰底而非 .phone 的白底 */
+.blogroll { padding: 24px; background: var(--wx-bg); }
+.blogroll-title { font-size: 13px; color: #8A9099; margin-bottom: 12px; letter-spacing: .5px; text-align: center; }
+/* 这里是 flex 容器，光写 text-align 居中不了子项，必须 justify-content: center */
+.blogroll-list { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; text-align: center; }
+.blogroll-item { font-size: 14px; color: var(--wx-blue); line-height: 1.5; }
+.blogroll-item:hover { text-decoration: underline; }
+.nm-link { text-decoration: none; }
+
+/* ============ 移动端适配 ============ */
+
+/* 触控设备专属：输入框字号必须 ≥16px，否则 iOS 聚焦时会强制放大整页且不会自动还原；
+   同时把偏小的点按目标撑开。用 hover/pointer 判定而非屏宽，平板/触屏笔电行为一致。 */
+@media (hover: none) and (pointer: coarse) {
+  .cbar input, .cbar textarea { font-size: 16px; }
+  .cbar-id input { height: 40px; }
+  .cbar-field textarea { height: 40px; max-height: 132px; line-height: 22px; padding: 9px 0; }
+  #cbarSend, #cbarCancel { height: 40px; font-size: 15px; padding: 0 18px; }
+  .cbar-emoji { width: 32px; height: 32px; margin-bottom: 4px; }
+  /* 手机上昵称与个人主页各占一行：16px 字号并排会挤掉 placeholder */
+  .cbar-id { flex-direction: column; flex-wrap: nowrap; }
+  .cbar-id input { flex: 1 1 auto; width: 100%; }
+  .pager .pg-num, .pager .pg-arrow { min-width: 40px; height: 40px; }
+  .emoji-cell { padding: 7px 0; }
+  .pop-item { padding: 12px 16px; }
+  .cmt-op { font-size: 13px; }
+  /* 热区撤掉后翻页只能点按钮本身，尺寸给到 44px 才够手指按 */
+  .v-arrow { width: 44px; height: 44px; }
+  .v-nav { gap: 20px; bottom: calc(26px + env(safe-area-inset-bottom)); }
+}
+
+/* 窄屏：正文放大到移动端舒适值，并把 24px 两侧留白收窄（375px 屏上左右共吃掉 13% 宽度）。
+   字号统一按 +2px 阶梯走，保持朋友圈原有的层级关系不被打乱。 */
+@media (max-width: 480px) {
+  .post { padding: 18px 14px; }
+  .p-text { font-size: 16px; }
+  .p-name { font-size: 15px; }
+  .acts { font-size: 15px; }
+  .p-time, .p-location { font-size: 13px; }
+  .p-location svg { width: 13px; height: 13px; }
+  .blogroll { padding: 20px 14px; }
+  .copyright { padding: 16px 14px 32px; }
+  /* 封面按比例收窄，避免未滚动时第一条内容完全看不见；昵称/签名/头像间距随动 */
+  .cover { height: 230px; }
+  .cover .cover-name, .cover .cover-sign { right: 92px; }
+  .cover .cover-avatar { right: 14px; width: 60px; height: 60px; }
+}

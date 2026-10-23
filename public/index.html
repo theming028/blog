@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>朝夕光年 · Ming的旅行影集</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/css/wx.css">
+</head>
+<body>
+<div class="phone">
+
+  <!-- 顶部导航 -->
+  <div class="nav">
+    朝夕光年
+    <a class="nav-btn right" id="navPublish" href="/edit" title="发布新内容" style="display:none">
+      <svg viewBox="0 0 24 24"><path d="M19 5h-2.2l-1.1-1.6c-.3-.5-.9-.8-1.5-.8H9.8c-.6 0-1.2.3-1.5.8L7.2 5H5c-1.7 0-3 1.3-3 3v10c0 1.7 1.3 3 3 3h14c1.7 0 3-1.3 3-3V8c0-1.7-1.3-3-3-3zm-7 12.5c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8.2c-1.8 0-3.2 1.4-3.2 3.2s1.4 3.2 3.2 3.2 3.2-1.4 3.2-3.2-1.4-3.2-3.2-3.2z"/></svg>
+    </a>
+  </div>
+
+  <!-- 封面与昵称/头像/签名一律等 /api/settings 下发；这里不写死任何值，避免和服务端默认值不同步 -->
+  <div class="cover">
+    <img class="cover-img" id="coverImg" alt="封面">
+    <div class="cover-name" id="coverName"></div>
+    <div class="cover-sign" id="coverSign"></div>
+    <img class="cover-avatar" id="coverAvatar" alt="头像">
+  </div>
+
+  <!-- 信息流 -->
+  <div class="feed" id="feed">
+    <div class="loading">加载中…</div>
+  </div>
+  <!-- 分页页码 -->
+  <div class="pager" id="pager" style="display:none"></div>
+
+  <!-- 网上邻居（友情链接） -->
+  <div class="blogroll" id="blogroll" style="display:none">
+    <div class="blogroll-title">网上邻居</div>
+    <div class="blogroll-list" id="blogrollList"></div>
+  </div>
+</div>
+
+<!-- 版权（独立于 phone 容器） -->
+<div class="copyright" id="copyright"></div>
+
+<!-- 评论表单：昵称 + 个人主页 + 评论内容在同一表单（挂在对应朋友圈的 acts 容器内） -->
+<div class="cbar" id="cbar">
+  <div class="cbar-id">
+    <input id="cName" type="text" maxlength="20" placeholder="昵称（必填）" autocomplete="nickname">
+    <input id="cSite" type="text" maxlength="120" placeholder="个人主页（选填，如 blog.com）" autocomplete="url">
+  </div>
+  <div class="cbar-field">
+    <div class="emoji-panel" id="emojiPanel"></div>
+    <textarea id="cbarInput" rows="1" maxlength="200" placeholder="写评论…" enterkeyhint="send"></textarea>
+    <button class="cbar-emoji" id="emojiBtn" title="表情">
+      <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16zM8.5 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zm7 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM12 17.5c2.03 0 3.8-1.11 4.75-2.75h-9.5A5.49 5.49 0 0 0 12 17.5z"/></svg>
+    </button>
+  </div>
+  <div class="cbar-acts">
+    <button id="cbarCancel">取消</button>
+    <button id="cbarSend">发送</button>
+  </div>
+  <div class="cbar-err" id="cbarErr"></div>
+</div>
+
+<!-- 大图查看器 -->
+<div class="viewer" id="viewer">
+  <div class="v-count" id="vCount"></div>
+  <div class="v-close" id="vClose"><svg viewBox="0 0 24 24"><path d="M19 6.4 17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg></div>
+  <div class="v-nav">
+    <button class="v-arrow v-prev" id="vPrev" type="button" title="上一张" aria-label="上一张"><svg viewBox="0 0 24 24"><path d="m14.5 6-6 6 6 6"/></svg></button>
+    <button class="v-arrow v-next" id="vNext" type="button" title="下一张" aria-label="下一张"><svg viewBox="0 0 24 24"><path d="m9.5 6 6 6-6 6"/></svg></button>
+  </div>
+  <img id="vImg" alt="">
+</div>
+
+<!-- 确认弹窗 -->
+<div class="mask" id="dlgConfirm">
+  <div class="dlg">
+    <div class="dlg-msg" id="dlgConfirmMsg"></div>
+    <div class="dlg-btns">
+      <button id="dlgConfirmCancel">取消</button>
+      <button id="dlgConfirmOk" class="primary">确定</button>
+    </div>
+  </div>
+</div>
+<!-- 提示弹窗 -->
+<div class="mask" id="dlgAlert">
+  <div class="dlg">
+    <div class="dlg-msg" id="dlgAlertMsg"></div>
+    <div class="dlg-btns"><button id="dlgAlertOk" class="primary">好</button></div>
+  </div>
+</div>
+
+<script src="/js/common.js"></script>
+<script src="/js/feed.js"></script>
+</body>
+</html>

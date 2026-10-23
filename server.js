@@ -1,0 +1,648 @@
+/**
+ * 个人旅行摄影博客（微信朋友圈风格）
+ * 零依赖 Node 服务：静态资源 + JSON API
+ * 本地预览用 LocalStore；发布到 QW Pages 后由运行时注入 SUPABASE_URL/ANON_KEY 自动切换云端库。
+ */
+'use strict';
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const { makeStore } = require('./lib/store');
+const { seedIfEmpty } = require('./lib/seed');
+const { migrateSnapshotToCloud } = require('./lib/migrate');
+const { screenComment } = require('./lib/spam');
+
+const COMMENT_MAX = 200; // 评论字数上限
+const POST_MAX = 5000;   // 正文长度上限，与发布页 textarea 的 maxlength 对齐
+const IMAGE_SIGNATURES = {
+  'image/jpeg': (b) => b.length > 2 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
+  'image/png': (b) => b.length > 7 && b.slice(0, 8).toString('hex') === '89504e470d0a1a0a',
+  'image/gif': (b) => b.length > 5 && ['GIF87a', 'GIF89a'].includes(b.slice(0, 6).toString('ascii')),
+  'image/webp': (b) => b.length > 11 && b.slice(0, 4).toString('ascii') === 'RIFF' && b.slice(8, 12).toString('ascii') === 'WEBP',
+};
+
+/* 唯一的数据源默认值：前端不再各自抄一份（此前散在 index.html 兜底 src、
+ * feed.js state.settings、admin.js DEFAULTS 共 4 处，改封面时真实漏改过）。
+ * 对外只通过 GET /api/settings 下发，且只回下面这几个键，服务端自用键不外泄。 */
+const PUBLIC_SETTING_KEYS = ['cover', 'avatar', 'nickname', 'sign'];
+const DEFAULT_SETTINGS = {
+  cover: '/demo/cover.png',
+  avatar: '/demo/ming.jpg',
+  nickname: 'Ming',
+  sign: '低调入尘埃',
+};
+
+/* 访客填的主页只允许 http(s)。统一"补协议 → new URL → 存 href"，
+ * 存下来的值必然以 http(s):// 开头，javascript: / data: 之类进不来。 */
+function safeHttpUrl(raw) {
+  const v = String(raw == null ? '' : raw).trim();
+  if (!v) return null;
+  if (/\s/.test(v)) return null; // 含空白的不是合法主页，直接判无效
+  let u;
+  try { u = new URL(/^https?:\/\//i.test(v) ? v : 'https://' + v); } catch (e) { return null; }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+  if (!u.hostname || !/\./.test(u.hostname)) return null; // 拒 "javascript" 这类无点主机
+  return u.href;
+}
+
+const PORT = Number(process.env.PORT || 8081);
+const ROOT = __dirname;
+const PUBLIC_DIR = path.join(ROOT, 'public');
+const DATA_DIR = path.join(ROOT, 'data');
+const SNAPSHOT_FILE = path.join(DATA_DIR, 'db.json');
+
+const store = makeStore(DATA_DIR);
+
+/* 安全响应头。script-src 不含 unsafe-inline，因此各页脚本已全部外置成文件；
+ * style-src 保留 'unsafe-inline'：页面里有 style="display:none" 这类内联样式属性。 */
+const SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'SAMEORIGIN',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Content-Security-Policy': [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self'",
+    "connect-src 'self'",
+    "form-action 'self'",
+    "base-uri 'self'",
+    "frame-ancestors 'self'",
+  ].join('; '),
+};
+
+/* ---------------- 后台鉴权 ----------------
+ * 修改密码：node -e "console.log(require('crypto').createHash('sha256').update('tm-blog-salt:新密码').digest('hex'))"
+ * 然后把结果替换到 ADMIN_PASS_HASH。
+ */
+const ADMIN_USER = 'helloeddy';
+const ADMIN_PASS_HASH = 'f71be0e5d6493fc8ba50f7d855898d18adfadcd1cf4a8af911f399252b947a76';
+const SESSION_TTL = 7 * 24 * 3600 * 1000; // 7 天，滑动续期
+const sessions = new Map(); // token -> expireAt
+
+/* 登录限速：同一「IP+用户名」在窗口内累计 5 次失败就锁 60 秒，返回 429。
+ * 站点完全公开且口令由用户自定，这一层是必需的。
+ * IP 取 x-forwarded-for 首段——它可被伪造，所以这只是"抬高撞库成本"而非绝对防线；
+ * 真正的防线是运行时的反代/IP 归一化。 */
+const LOGIN_MAX_FAILS = 5;
+const LOGIN_WINDOW_MS = 60 * 1000;
+const loginFails = new Map(); // key -> { n, first }
+
+function clientIp(req) {
+  const xff = req.headers['x-forwarded-for'];
+  if (typeof xff === 'string' && xff.trim()) return xff.split(',')[0].trim();
+  return (req.socket && req.socket.remoteAddress) || 'unknown';
+}
+
+function loginLockInfo(key) {
+  const rec = loginFails.get(key);
+  if (!rec) return null;
+  if (Date.now() - rec.first > LOGIN_WINDOW_MS) { loginFails.delete(key); return null; }
+  return rec.n >= LOGIN_MAX_FAILS ? Math.ceil((rec.first + LOGIN_WINDOW_MS - Date.now()) / 1000) : null;
+}
+
+function noteLoginFail(key) {
+  const rec = loginFails.get(key);
+  if (!rec || Date.now() - rec.first > LOGIN_WINDOW_MS) loginFails.set(key, { n: 1, first: Date.now() });
+  else rec.n += 1;
+  if (loginFails.size > 2000) { // 防无界增长：过期项顺手清
+    const now = Date.now();
+    for (const [k, v] of loginFails) if (now - v.first > LOGIN_WINDOW_MS) loginFails.delete(k);
+  }
+}
+
+const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
+const hashEq = (a, b) => {
+  const ba = Buffer.from(a, 'hex'), bb = Buffer.from(b, 'hex');
+  return ba.length === bb.length && crypto.timingSafeEqual(ba, bb);
+};
+function parseCookies(req) {
+  const out = {};
+  (req.headers.cookie || '').split(';').forEach((kv) => {
+    const i = kv.indexOf('=');
+    if (i > 0) out[kv.slice(0, i).trim()] = kv.slice(i + 1).trim();
+  });
+  return out;
+}
+function isAdmin(req) {
+  const t = parseCookies(req).tm_admin;
+  if (!t || !sessions.has(t)) return false;
+  if (Date.now() > sessions.get(t)) { sessions.delete(t); return false; }
+  sessions.set(t, Date.now() + SESSION_TTL);
+  return true;
+}
+
+/* ---------------- 工具 ---------------- */
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+};
+
+function sendJson(res, code, obj) {
+  const body = JSON.stringify(obj);
+  res.writeHead(code, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+    ...SECURITY_HEADERS,
+  });
+  res.end(body);
+}
+function sendError(res, code, msg) { sendJson(res, code, { error: msg }); }
+
+function readBody(req, limitMB = 20) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > limitMB * 1024 * 1024) { reject(new Error('body too large')); req.destroy(); return; }
+      chunks.push(c);
+    });
+    req.on('end', () => {
+      if (!chunks.length) return resolve({});
+      try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
+      catch (e) { reject(new Error('invalid json')); }
+    });
+    req.on('error', reject);
+  });
+}
+
+/* 缓存策略：html/css/js 每次带校验器重新验证（改动即时可见，命中 304 只走头部）；
+ * 图片和字体仍可缓存 300 秒，它们按内容命名、不会原地变。 */
+function serveStatic(req, res, filePath) {
+  let st;
+  try { st = fs.statSync(filePath); } catch (e) { res.writeHead(404); return res.end('Not Found'); }
+  const ext = path.extname(filePath).toLowerCase();
+  const mime = MIME[ext] || 'application/octet-stream';
+  const mtimeMs = Math.floor(st.mtimeMs);
+  const etag = `W/"${st.size.toString(16)}-${mtimeMs.toString(16)}"`;
+  const lastModified = new Date(mtimeMs).toUTCString();
+  const inm = req.headers['if-modified-since'];
+  const incs = req.headers['if-none-match'];
+  // HTTP 日期只有秒级精度，两边都取整到秒再比，否则永远判定为“已修改”
+  const mtimeSec = Math.floor(mtimeMs / 1000);
+  const imsSec = inm ? Math.floor(Date.parse(inm) / 1000) : NaN;
+  const notModified = (incs ? incs.split(',').map((s) => s.trim()).includes(etag) : false)
+    || (Number.isFinite(imsSec) && imsSec >= mtimeSec);
+  const base = { ETag: etag, 'Last-Modified': lastModified, ...SECURITY_HEADERS };
+  if (notModified) { res.writeHead(304, base); return res.end(); }
+  const cache = ['.html', '.css', '.js'].includes(ext) ? 'no-cache' : 'public, max-age=300';
+  res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': cache, ...base });
+  if (req.method === 'HEAD') return res.end(); // HEAD 只回头部，不能吐 body
+  fs.createReadStream(filePath)
+    .on('error', () => {
+      if (!res.headersSent) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', ...SECURITY_HEADERS }); res.end('Not Found'); }
+      else res.destroy(); // 头已发出就不能再往里写正文，只能断流
+    })
+    .pipe(res);
+}
+
+/* Secure 判定要三层兜底。实测 Page 运行时（函数计算）不透传 x-forwarded-proto，
+ * 只看它会让线上会话 cookie 丢掉 Secure；只看 encrypted 又永远不成立（TLS 在网关终结）。
+ * 因此再加"Host 不是本机/内网"这一条：发布出去的站点只有 https 入口。
+ * 若将来把它跑在一个纯 http 的公网机器上，登录会因 Secure 被浏览器丢弃——
+ * 那种部署请显式设 FORCE_INSECURE_COOKIE=1。 */
+const PRIVATE_HOST = /^(localhost|127\.|\[::1\]|0\.0\.0\.0|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/i;
+function isHttps(req) {
+  if (process.env.FORCE_INSECURE_COOKIE === '1') return false;
+  if (req.headers['x-forwarded-proto'] === 'https') return true;
+  if (req.socket && req.socket.encrypted) return true;
+  return !PRIVATE_HOST.test(String(req.headers.host || ''));
+}
+const cookieFlags = 'Path=/; HttpOnly; SameSite=Lax';
+const secureSuffix = (req) => (isHttps(req) ? '; Secure' : '');
+
+/* ---------------- API ---------------- */
+async function handleApi(req, res, pathname, query) {
+  const method = req.method;
+  const authed = isAdmin(req);
+
+  // 鉴权接口（公开）
+  if (pathname === '/api/login' && method === 'POST') {
+    const b = await readBody(req);
+    const user = String(b.user || '');
+    const key = clientIp(req) + '|' + user;
+    const wait = loginLockInfo(key);
+    if (wait) {
+      res.writeHead(429, { 'Retry-After': String(wait), 'Content-Type': 'application/json; charset=utf-8', ...SECURITY_HEADERS });
+      return res.end(JSON.stringify({ error: `失败次数过多，请 ${wait} 秒后重试` }));
+    }
+    const ok = user === ADMIN_USER && hashEq(sha256('tm-blog-salt:' + String(b.pass || '')), ADMIN_PASS_HASH);
+    if (!ok) {
+      noteLoginFail(key);
+      return sendError(res, 401, '用户名或密码错误');
+    }
+    loginFails.delete(key);
+    // 登录成功换发新 token 并清掉旧的：缓解会话固定（cookie 由攻击者预设也活不过一次登录）
+    for (const [t, exp] of sessions) if (exp < Date.now()) sessions.delete(t);
+    const token = crypto.randomBytes(24).toString('hex');
+    sessions.set(token, Date.now() + SESSION_TTL);
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Set-Cookie': `tm_admin=${token}; ${cookieFlags}; Max-Age=${SESSION_TTL / 1000}${secureSuffix(req)}`,
+      ...SECURITY_HEADERS,
+    });
+    return res.end(JSON.stringify({ ok: true }));
+  }
+  if (pathname === '/api/logout' && method === 'POST') {
+    const t = parseCookies(req).tm_admin;
+    if (t) sessions.delete(t);
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Set-Cookie': `tm_admin=; ${cookieFlags}; Max-Age=0${secureSuffix(req)}`,
+    });
+    return res.end(JSON.stringify({ ok: true }));
+  }
+  if (pathname === '/api/session' && method === 'GET') {
+    return sendJson(res, 200, { admin: authed });
+  }
+
+  // 管理操作需要登录：帖子增删改、设置、上传、草稿读取、评论管理/审核/统计。
+  // 访客互动（点赞、评论、评论编辑/删除自己的）保持公开。
+  const isPostItem = /^\/api\/posts\/[\w-]+$/.test(pathname);
+  const isCommentModerate = /^\/api\/comments\/[\w-]+\/moderate$/.test(pathname);
+  const isLinkItem = /^\/api\/links\/[\w-]+$/.test(pathname) && pathname !== '/api/links/batch-delete';
+  const adminOnly =
+    (pathname === '/api/upload' && method === 'POST') ||
+    (pathname === '/api/settings' && method === 'PUT') ||
+    (pathname === '/api/posts' && method === 'POST') ||
+    (isPostItem && (method === 'PUT' || method === 'DELETE')) ||
+    (pathname === '/api/comments' && method === 'GET') ||
+    (pathname === '/api/comments/stats' && method === 'GET') ||
+    (pathname === '/api/comments/batch-delete' && method === 'POST') ||
+    (isCommentModerate && method === 'PUT') ||
+    (pathname === '/api/links' && method === 'POST') ||
+    (pathname === '/api/links/batch-delete' && method === 'POST') ||
+    (isLinkItem && (method === 'PUT' || method === 'DELETE'));
+  const wantDrafts = pathname === '/api/posts' && method === 'GET' && query.get('drafts') === '1';
+  if (!authed && (adminOnly || wantDrafts)) {
+    return sendError(res, 401, '请先登录后台');
+  }
+
+  // 图片二进制
+  let m = pathname.match(/^\/api\/images\/([\w-]+)$/);
+  if (m && method === 'GET') {
+    const img = await store.getImage(m[1]);
+    if (!img) return sendError(res, 404, 'image not found');
+    const buf = Buffer.from(img.data, 'base64');
+    res.writeHead(200, { 'Content-Type': img.mime, 'Cache-Control': 'public, max-age=31536000, immutable', 'Content-Length': buf.length });
+    return res.end(buf);
+  }
+
+  if (pathname === '/api/posts' && method === 'GET') {
+    const includeDrafts = query.get('drafts') === '1';
+    const posts = await store.listPosts(includeDrafts);
+    const [likes, comments] = await Promise.all([store.allLikes(), store.allComments()]);
+    for (const p of posts) {
+      p.likes = likes.filter((l) => l.post_id === p.id);
+      // 前台仅展示 visible 评论；后台草稿列表返回全部评论（含待审/屏蔽）以便计数与审核
+      p.comments = comments.filter((c) => c.post_id === p.id && (includeDrafts || c.status === 'visible'));
+    }
+    // 后台草稿列表返回全量；前台信息流按页返回（默认每页 10 条）
+    if (includeDrafts) return sendJson(res, 200, { posts });
+    const pageSize = Math.min(50, Math.max(1, parseInt(query.get('limit'), 10) || 10));
+    const total = posts.length;
+    const pages = Math.max(1, Math.ceil(total / pageSize));
+    let page = parseInt(query.get('page'), 10) || 1;
+    page = Math.min(Math.max(1, page), pages);
+    const start = (page - 1) * pageSize;
+    return sendJson(res, 200, { posts: posts.slice(start, start + pageSize), total, page, pageSize, pages });
+  }
+
+  if (pathname === '/api/posts' && method === 'POST') {
+    const b = await readBody(req);
+    if (!b.content && !(b.images || []).length) return sendError(res, 400, '内容和图片不能同时为空');
+    if (String(b.content || '').length > POST_MAX) return sendError(res, 400, `正文不能超过 ${POST_MAX} 字`);
+    const post = await store.createPost({
+      content: String(b.content || ''),
+      location: b.location ? String(b.location) : null,
+      images: Array.isArray(b.images) ? b.images.slice(0, 9) : [],
+      status: b.status === 'draft' ? 'draft' : 'published',
+    });
+    return sendJson(res, 200, { post });
+  }
+
+  m = pathname.match(/^\/api\/posts\/([\w-]+)$/);
+  if (m && method === 'GET') {
+    const post = await store.getPost(m[1]);
+    if (!post) return sendError(res, 404, 'post not found');
+    post.likes = await store.listLikes(m[1]);
+    const allC = await store.listComments(m[1]);
+    post.comments = allC.filter((c) => c.status === 'visible');
+    return sendJson(res, 200, { post });
+  }
+  if (m && method === 'PUT') {
+    const b = await readBody(req);
+    const patch = {};
+    if (b.content !== undefined) {
+      if (String(b.content).length > POST_MAX) return sendError(res, 400, `正文不能超过 ${POST_MAX} 字`);
+      patch.content = String(b.content);
+    }
+    if (b.location !== undefined) patch.location = b.location ? String(b.location) : null;
+    if (b.images !== undefined) patch.images = Array.isArray(b.images) ? b.images.slice(0, 9) : [];
+    if (b.status !== undefined) patch.status = b.status === 'draft' ? 'draft' : 'published';
+    const post = await store.updatePost(m[1], patch);
+    if (!post) return sendError(res, 404, 'post not found');
+    return sendJson(res, 200, { post });
+  }
+  if (m && method === 'DELETE') {
+    const post = await store.getPost(m[1]);
+    if (!post) return sendError(res, 404, 'post not found');
+    await store.deletePost(m[1]);
+    return sendJson(res, 200, { ok: true });
+  }
+
+  m = pathname.match(/^\/api\/posts\/([\w-]+)\/like$/);
+  if (m && method === 'POST') {
+    const b = await readBody(req);
+    if (!b.clientKey) return sendError(res, 400, 'clientKey required');
+    await store.addLike(m[1], String(b.clientKey), String(b.name || '游客')); // 唯一索引幂等
+    return sendJson(res, 200, { liked: true, likes: await store.listLikes(m[1]) });
+  }
+  if (m && method === 'DELETE') {
+    const clientKey = query.get('clientKey');
+    if (!clientKey) return sendError(res, 400, 'clientKey required');
+    await store.removeLike(m[1], clientKey);
+    return sendJson(res, 200, { liked: false, likes: await store.listLikes(m[1]) });
+  }
+
+  m = pathname.match(/^\/api\/posts\/([\w-]+)\/comments$/);
+  if (m && method === 'POST') {
+    const b = await readBody(req);
+    if (!b.content || !String(b.content).trim()) return sendError(res, 400, '评论内容不能为空');
+    if (!b.name || !String(b.name).trim()) return sendError(res, 400, '昵称不能为空');
+    const content = String(b.content).trim();
+    if (content.length > COMMENT_MAX) return sendError(res, 400, `评论不能超过 ${COMMENT_MAX} 字`);
+    let replyToName = null;
+    if (b.replyToId) {
+      const all = await store.listComments(m[1]);
+      const target = all.find((c) => c.id === b.replyToId);
+      if (target) replyToName = target.name;
+    }
+    // 反垃圾筛查：命中 → pending（前台不展示，进后台待审）
+    const check = screenComment(content);
+    const comment = await store.addComment({
+      post_id: m[1],
+      name: String(b.name).trim(),
+      content,
+      reply_to_id: b.replyToId || null,
+      reply_to_name: replyToName,
+      client_key: b.clientKey ? String(b.clientKey) : null,
+      site: safeHttpUrl(b.site), // 只接受 http(s)， javascript:/data: 之类一律置空
+      status: check.flagged ? 'pending' : 'visible',
+      flag_reason: check.reason,
+    });
+    return sendJson(res, 200, { comment });
+  }
+
+  /* ---------- 评论管理（后台） ---------- */
+  if (pathname === '/api/comments/stats' && method === 'GET') {
+    const all = await store.allComments();
+    const by = (s) => all.filter((c) => c.status === s).length;
+    return sendJson(res, 200, {
+      stats: { total: all.length, visible: by('visible'), pending: by('pending'), hidden: by('hidden') },
+    });
+  }
+  if (pathname === '/api/comments' && method === 'GET') {
+    const status = query.get('status') || 'all';
+    const pageSize = Math.min(100, Math.max(1, parseInt(query.get('limit'), 10) || 20));
+    let page = parseInt(query.get('page'), 10) || 1;
+    const [posts, all] = await Promise.all([store.listPosts(true), store.allComments()]);
+    const postMap = {};
+    posts.forEach((p) => { postMap[p.id] = { content: p.content, location: p.location }; });
+    let list = all.slice();
+    if (status !== 'all') list = list.filter((c) => c.status === status);
+    list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    const total = list.length;
+    const pages = Math.max(1, Math.ceil(total / pageSize));
+    page = Math.min(Math.max(1, page), pages);
+    const start = (page - 1) * pageSize;
+    const rows = list.slice(start, start + pageSize).map((c) => ({
+      ...c, post: postMap[c.post_id] || { content: '（内容已删除）', location: null },
+    }));
+    return sendJson(res, 200, { comments: rows, total, page, pageSize, pages });
+  }
+  m = pathname.match(/^\/api\/comments\/([\w-]+)\/moderate$/);
+  if (m && method === 'PUT') {
+    const b = await readBody(req);
+    const st = ['visible', 'pending', 'hidden'].includes(b.status) ? b.status : null;
+    if (!st) return sendError(res, 400, '非法状态');
+    const updated = await store.updateCommentStatus(m[1], st, st === 'visible' ? null : undefined);
+    if (!updated) return sendError(res, 404, '评论不存在');
+    return sendJson(res, 200, { comment: updated });
+  }
+
+  m = pathname.match(/^\/api\/comments\/([\w-]+)$/);
+  if (m && (method === 'PUT' || method === 'DELETE')) {
+    const c = await store.getComment(m[1]);
+    if (!c) return sendError(res, 404, '评论不存在');
+    let ck = query.get('clientKey');
+    let body = {};
+    if (method === 'PUT') { body = await readBody(req); ck = body.clientKey; }
+    // 非管理员只能操作自己（client_key 匹配）的评论
+    if (!authed && (!ck || ck !== c.client_key)) return sendError(res, 403, '只能操作自己的评论');
+    if (method === 'DELETE') {
+      await store.deleteComment(m[1]);
+      return sendJson(res, 200, { ok: true });
+    }
+    if (!body.content || !String(body.content).trim()) return sendError(res, 400, '评论内容不能为空');
+    const content = String(body.content).trim();
+    if (content.length > COMMENT_MAX) return sendError(res, 400, `评论不能超过 ${COMMENT_MAX} 字`);
+    // 编辑后重新筛查
+    const check = screenComment(content);
+    const updated = await store.updateComment(m[1], content);
+    await store.updateCommentStatus(m[1], check.flagged ? 'pending' : 'visible', check.reason);
+    return sendJson(res, 200, { comment: { ...updated, status: check.flagged ? 'pending' : 'visible' } });
+  }
+
+  /* 只回白名单键：settings 里还有服务端自用的标记（如 _migrated），不能整包吐给浏览器 */
+  const publicSettings = (s) => {
+    const merged = { ...DEFAULT_SETTINGS, ...(s || {}) };
+    const out = {};
+    for (const k of PUBLIC_SETTING_KEYS) out[k] = merged[k];
+    return out;
+  };
+
+  if (pathname === '/api/settings' && method === 'GET') {
+    const stored = await store.getSettings();
+    return sendJson(res, 200, { settings: publicSettings(stored) });
+  }
+  if (pathname === '/api/settings' && method === 'PUT') {
+    const b = await readBody(req);
+    const patch = {};
+    for (const k of PUBLIC_SETTING_KEYS) {
+      if (b[k] !== undefined) patch[k] = String(b[k]).trim();
+    }
+    const saved = await store.setSettings(patch);
+    return sendJson(res, 200, { settings: publicSettings(saved) });
+  }
+
+  /* ---------- 网上邻居（友情链接） ---------- */
+  if (pathname === '/api/links' && method === 'GET') {
+    return sendJson(res, 200, { links: await store.listLinks() });
+  }
+  if (pathname === '/api/links' && method === 'POST') {
+    const b = await readBody(req);
+    if (!b.name || !String(b.name).trim()) return sendError(res, 400, '名称不能为空');
+    const url = safeHttpUrl(b.url); // 与评论 site 同一套协议白名单
+    if (!url) return sendError(res, 400, '链接需以 http(s):// 开头且为合法地址');
+    const link = await store.createLink({
+      name: String(b.name).trim(), url,
+      descr: b.descr ? String(b.descr).trim() : '', sort: Number(b.sort) || 0,
+    });
+    return sendJson(res, 200, { link });
+  }
+  if (pathname === '/api/links/batch-delete' && method === 'POST') {
+    const b = await readBody(req);
+    const ids = Array.isArray(b.ids) ? b.ids : [];
+    const n = await store.deleteLinksByIds(ids);
+    return sendJson(res, 200, { ok: true, deleted: n });
+  }
+  m = pathname.match(/^\/api\/links\/([\w-]+)$/);
+  if (m && method === 'PUT') {
+    const b = await readBody(req);
+    const patch = {};
+    if (b.name !== undefined) patch.name = String(b.name).trim();
+    if (b.url !== undefined) {
+      const url = safeHttpUrl(b.url); // 更新走的是同一条校验，别留"只有创建时把关"的缺口
+      if (!url) return sendError(res, 400, '链接需以 http(s):// 开头且为合法地址');
+      patch.url = url;
+    }
+    if (b.descr !== undefined) patch.descr = String(b.descr).trim();
+    if (b.sort !== undefined) patch.sort = Number(b.sort) || 0;
+    const link = await store.updateLink(m[1], patch);
+    if (!link) return sendError(res, 404, '链接不存在');
+    return sendJson(res, 200, { link });
+  }
+  if (m && method === 'DELETE') {
+    await store.deleteLink(m[1]);
+    return sendJson(res, 200, { ok: true });
+  }
+
+  if (pathname === '/api/comments/batch-delete' && method === 'POST') {
+    const b = await readBody(req);
+    const ids = Array.isArray(b.ids) ? b.ids : [];
+    if (!ids.length) return sendError(res, 400, '未选择评论');
+    const n = await store.deleteCommentsByIds(ids);
+    return sendJson(res, 200, { ok: true, deleted: n });
+  }
+
+  if (pathname === '/api/upload' && method === 'POST') {
+    const b = await readBody(req, 25);
+    if (!b.data || !b.mime || !/^image\/(jpeg|png|webp|gif)$/.test(b.mime)) {
+      return sendError(res, 400, '仅支持 jpg/png/webp/gif 图片');
+    }
+    let buf;
+    try { buf = Buffer.from(String(b.data), 'base64'); }
+    catch (e) { return sendError(res, 400, '图片数据无法解析'); }
+    if (buf.length > 8 * 1024 * 1024) return sendError(res, 400, '图片不能超过 8MB');
+    // 按真实文件头校验，不能信前端声明的 mime：/api/images 会原样带着存储的 mime 回吐，
+    // 声明成 image/* 却塞进别的字节，等于给了一个可托管任意内容的同域 URL
+    if (!(IMAGE_SIGNATURES[b.mime] || (() => false))(buf)) {
+      return sendError(res, 400, '文件内容与声明的图片格式不符');
+    }
+    const id = await store.saveImage(b.mime, buf.toString('base64'));
+    return sendJson(res, 200, { id, url: `/api/images/${id}` });
+  }
+
+  sendError(res, 404, 'api not found');
+}
+
+/* ---------------- Server ---------------- */
+const server = http.createServer(async (req, res) => {
+  let u;
+  try { u = new URL(req.url, `http://${req.headers.host || 'localhost'}`); }
+  catch (e) { res.writeHead(400, SECURITY_HEADERS); return res.end('Bad Request'); }
+  // 只解码 pathname：把整条 URL（含 ?drafts=1）一起解码会让 searchParams 解析不到参数，
+  // 后台草稿列表因此永远拿不到 drafts=1（本地按 ?param 分栏、线上按 & 拼接，才没被发现）。
+  const pathname = decodeURIComponent(u.pathname);
+
+  // Windows 下 \ 也是路径分隔符。new URL() 只规范化 / 形式的点段，%5c 要等
+  // decodeURIComponent 之后才变成 \，所以必须在 join 之前拒掉，否则 ..\ 能跳出 web 根。
+  if (pathname.includes('\\') || /%5c/i.test(req.url)) {
+    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8', ...SECURITY_HEADERS });
+    return res.end('Bad Request');
+  }
+
+  try {
+    if (pathname.startsWith('/api/')) return await handleApi(req, res, pathname, u.searchParams);
+  } catch (e) {
+    console.error('[api error]', pathname, e.message);
+    if (!res.headersSent) return sendError(res, 500, e.message || 'server error');
+    return res.end();
+  }
+
+  // 静态资源
+  let file = pathname === '/' ? '/index.html' : pathname;
+  if (pathname === '/admin') file = '/admin.html';
+  if (pathname === '/edit') file = '/edit.html';
+  if (pathname === '/login') file = '/login.html';
+  // 管理页面需登录
+  if (['/admin', '/admin.html', '/edit', '/edit.html'].includes(file) && !isAdmin(req)) {
+    res.writeHead(302, { Location: '/login', ...SECURITY_HEADERS });
+    return res.end();
+  }
+  const full = path.normalize(path.join(PUBLIC_DIR, file));
+  // 必须带分隔符比较：只写 startsWith(PUBLIC_DIR) 时，同级 public_backup/ 这类
+  // "名字以 public 开头"的目录会被判为合法而读出去。
+  const inside = full === PUBLIC_DIR || full.startsWith(PUBLIC_DIR + path.sep);
+  if (!inside) { res.writeHead(403, SECURITY_HEADERS); return res.end('Forbidden'); }
+  if (fs.existsSync(full) && fs.statSync(full).isFile()) return serveStatic(req, res, full);
+  res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', ...SECURITY_HEADERS });
+  res.end('Not Found');
+});
+
+/* 先监听端口，再做可能要跑几秒的导入/播种。
+ * 原先是 await 迁移完才 listen：3.3MB 快照要几十次云端插入，Page 运行时的健康检查
+ * 可能在端口就绪前超时并重启容器，而"是否已导入"当时是按帖子数判断的——帖子插在
+ * 评论/点赞之前，中途重启就会留下永久不完整的库。 */
+const MIGRATION_FLAG = '_migrated';
+
+async function bootstrap() {
+  try {
+    if (store.kind === 'supabase') {
+      const stored = await store.getSettings();
+      if (!stored[MIGRATION_FLAG]) {
+        const already = await store.countPosts();
+        if (already > 0) {
+          // 有内容却没标记：可能是旧版本导入过（当时还没有标记机制），也可能是上次中断。
+          // 两种情况都不该再跑一遍（会重复写入），所以跳过并把两种可能都写清楚。
+          console.warn('[migrate] 云端已有内容但缺少迁移标记（可能是早期版本导入，或上次导入中断）；'
+            + '已跳过自动导入以免重复写入，如需核对请比对线上与 data/db.json 的条目');
+        } else {
+          const moved = await migrateSnapshotToCloud(store, SNAPSHOT_FILE);
+          if (moved) {
+            await store.setSettings({ [MIGRATION_FLAG]: new Date().toISOString() });
+            console.log('[migrate] 本地快照已导入云端:', JSON.stringify(moved));
+          }
+        }
+      }
+    }
+    const n = await store.countPosts();
+    if (n === 0) {
+      await seedIfEmpty(store, path.join(ROOT, 'assets', 'demo'));
+      console.log('[seed] 已写入示例内容');
+    }
+  } catch (e) {
+    console.error('[boot error]', e.message);
+  }
+}
+
+const HOST = process.env.HOST || '0.0.0.0';
+server.listen(PORT, HOST, () => {
+  console.log(`朋友圈风格个人博客已启动: http://localhost:${PORT}`);
+  console.log(`管理后台: http://localhost:${PORT}/admin`);
+  bootstrap(); // 不 await：端口先可用，导入在后台进行
+});

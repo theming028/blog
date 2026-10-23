@@ -1,0 +1,12 @@
+{
+  "name": "moments-blog",
+  "version": "1.0.0",
+  "description": "个人博客 — 微信朋友圈风格",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

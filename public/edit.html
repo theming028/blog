@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>发表内容 · 朝夕光年后台</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/css/admin.css">
+</head>
+<body>
+<div class="adm">
+
+  <aside class="adm-side" id="side">
+    <div class="adm-brand"><b>朝夕光年</b><small>Ming 的旅行影集 · 管理后台</small></div>
+    <nav class="adm-nav">
+      <div class="adm-nav-label">内容</div>
+      <a class="adm-nav-item" href="/admin">
+        <svg viewBox="0 0 24 24"><path d="M4 5h16v2H4zm0 6h16v2H4zm0 6h10v2H4z"/></svg>内容管理
+      </a>
+      <a class="adm-nav-item" href="/admin#comments">
+        <svg viewBox="0 0 24 24"><path d="M12 3C6.5 3 2 6.9 2 11.7c0 2.7 1.4 5.1 3.7 6.7-.2 1-.8 2.2-1.6 3 1.7-.2 3.3-.9 4.4-1.7 1.1.3 2.3.5 3.5.5 5.5 0 10-3.9 10-8.5S17.5 3 12 3z"/></svg>评论管理
+      </a>
+      <a class="adm-nav-item" href="/admin#links">
+        <svg viewBox="0 0 24 24"><path d="M10.6 13.4a1 1 0 0 1 0-1.4l1.4-1.4a1 1 0 0 1 1.4 1.4L12 13.4a1 1 0 0 1-1.4 0zM8.5 15.5 7 17a3 3 0 0 0 4.2 4.2l1.5-1.5m2.8-8.2L19 7a3 3 0 1 0-4.2-4.2l-1.5 1.5"/></svg>网上邻居
+      </a>
+      <div class="adm-nav-label">设置</div>
+      <a class="adm-nav-item" href="/admin#sign">
+        <svg viewBox="0 0 24 24"><path d="M3 17.2V21h3.8L17.9 9.9l-3.8-3.8zM20.7 7.1a1 1 0 0 0 0-1.4l-2.4-2.4a1 1 0 0 0-1.4 0l-1.8 1.8 3.8 3.8z"/></svg>签名管理
+      </a>
+      <a class="adm-nav-item" href="/admin#settings">
+        <svg viewBox="0 0 24 24"><path d="M12 2 3 7v10l9 5 9-5V7zm0 2.3 6.5 3.6L12 13 5.5 9.5zM5 11.2l6 3.3v5.6l-6-3.3zm14 0v5.6l-6 3.3v-5.6z"/></svg>外观设置
+      </a>
+    </nav>
+    <div class="adm-side-foot">
+      <button class="adm-nav-item" id="btnLogout">
+        <svg viewBox="0 0 24 24"><path d="M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h5v-2H5V5h5zm7.6 4.6L16.2 6.2 20 10h-8v2h8l-3.8 3.8 1.4 1.4L22 12z"/></svg>退出登录
+      </button>
+    </div>
+  </aside>
+
+  <div class="adm-main">
+    <header class="adm-top">
+      <div style="display:flex;align-items:center;gap:12px">
+        <button class="adm-menu-btn" id="btnMenu"><svg viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg></button>
+        <h1 id="navTitle">发表内容</h1>
+      </div>
+      <div class="adm-top-actions">
+        <button class="adm-btn danger" id="btnDelete" style="display:none">删除</button>
+        <button class="adm-btn" id="btnDraft">存草稿</button>
+        <button class="adm-btn primary" id="btnPublish">发表</button>
+      </div>
+    </header>
+
+    <div class="adm-body">
+      <div class="adm-form">
+        <div class="adm-field">
+          <label>正文 <span class="hint">这一刻的想法…</span></label>
+          <textarea class="adm-textarea" id="eText" placeholder="记录这段旅程…" maxlength="5000"></textarea>
+        </div>
+        <div class="adm-field">
+          <label>所在位置 <span class="hint">选填</span></label>
+          <input class="adm-input" id="eLoc" type="text" placeholder="如：敦煌 · 鸣沙山月牙泉" maxlength="60">
+        </div>
+        <div class="adm-field" style="margin-bottom:8px">
+          <label>图片 <span class="hint">最多 9 张，自动压缩上传</span></label>
+          <div class="adm-photos" id="ePhotos"></div>
+          <div class="adm-up" id="eUp"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="fileInput" accept="image/jpeg,image/png,image/webp,image/gif" multiple style="display:none">
+
+<!-- 确认弹窗 -->
+<div class="adm-mask" id="dlgConfirm">
+  <div class="adm-modal" style="width:360px">
+    <div class="adm-modal-body"><div class="adm-modal-msg" id="dlgConfirmMsg"></div></div>
+    <div class="adm-modal-foot">
+      <button class="adm-btn" id="dlgConfirmCancel">取消</button>
+      <button class="adm-btn primary" id="dlgConfirmOk">确定</button>
+    </div>
+  </div>
+</div>
+<!-- 提示弹窗 -->
+<div class="adm-mask" id="dlgAlert">
+  <div class="adm-modal" style="width:340px">
+    <div class="adm-modal-body"><div class="adm-modal-msg" id="dlgAlertMsg"></div></div>
+    <div class="adm-modal-foot"><button class="adm-btn primary" id="dlgAlertOk">好</button></div>
+  </div>
+</div>
+
+<script src="/js/common.js"></script>
+<script src="/js/edit.js"></script>
+</body>
+</html>

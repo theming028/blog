@@ -1,0 +1,15 @@
+# macOS 元数据
+.DS_Store
+
+# 运行时数据库：3MB+ 且含 base64 图片，提交会快速撑大历史。
+# 想把它纳入版本控制（换取内容可回滚）就删掉下面这行。
+data/db.json
+data/*.tmp
+data/images/
+
+# 改动前的手工快照（放在项目外，这里只是双保险）
+.backup-*/
+
+# 依赖与日志（本项目零依赖，正常不会出现）
+node_modules/
+*.log
