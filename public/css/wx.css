@@ -163,7 +163,7 @@ input, textarea, select { font-family: inherit; }
   font: inherit; font-size: 13px; color: inherit; background: none; border: 0; border-radius: 4px;
   -webkit-appearance: none; appearance: none; cursor: pointer;
 }
-.like-row svg { width: 15px; height: 15px; margin-right: 2.5px; flex: none; fill: var(--wx-blue); stroke: none; }
+.like-row svg { width: 14px; height: 14px; margin-right: 2.5px; flex: none; fill: var(--wx-blue); stroke: none; }
 .like-row:not(.num) svg { fill: none; stroke: var(--wx-blue); stroke-width: 1.7; }
 .like-row.mine svg { fill: var(--wx-red); stroke: none; }
 .like-row:hover svg { fill: var(--wx-blue); stroke: none; }
