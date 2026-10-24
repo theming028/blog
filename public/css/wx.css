@@ -385,10 +385,12 @@ input, textarea, select { font-family: inherit; }
 /* 触控设备专属：输入框字号必须 ≥16px，否则 iOS 聚焦时会强制放大整页且不会自动还原；
    同时把偏小的点按目标撑开。用 hover/pointer 判定而非屏宽，平板/触屏笔电行为一致。 */
 @media (hover: none) and (pointer: coarse) {
-  /* 移动端整条顶部导航不显示；同时收回为它预留的 46px 顶部间距，
-     否则封面下方会留下一白条。副作用见交付说明：移动端后台的"发布"入口随导航一起消失。 */
+  /* 移动端整条顶部导航不显示。副作用见交付说明：移动端后台的"发布"入口随导航一起消失。
+     ⚠️ 不要顺手把 .feed 的 padding-top 一起清零：.nav 是 position:fixed，从来没占过文档流，
+     那 46px 不是给它预留的，而是封面与信息流之间唯一的间距，同时还兜着从封面底边
+     探出来的 .cover-sign（下探 24px）和 .cover-avatar（下探 34px）。
+     实测清零后 gap=0、头像被第一条帖子压住 34px、签名压住 24px。 */
   .nav { display: none; }
-  .feed { padding-top: 0; }
   .cbar input, .cbar textarea { font-size: 16px; }
   .cbar-id input { height: 40px; }
   .cbar-field textarea { height: 40px; max-height: 132px; line-height: 22px; padding: 9px 0; }
