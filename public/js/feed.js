@@ -197,13 +197,13 @@ async function addLikeOnly(pid) {
 const LIKE_EXCLUDE = 'a, button, input, textarea, .like-row, .cbar, .p-toggle, .pop, .cmt, .cmt-more, .p-single img, .p-grid img, .blogroll-item, .viewer';
 const tapMemo = { pid: '', t: 0, x: 0, y: 0 };
 
-async function likeAt(postEl) {
+async function likeAt(postEl, origin) {
   const pid = postEl.dataset.pid;
   if (!pid) return;
   // 先等结果再放特效：之前是"先炸心再发请求"，被限流或离线时心炸了但计数没变，视觉在说谎。
   // 本地/内网这一跳通常几毫秒；真机上一来一回也远快于人眼对"双击"的判定。
   const done = await addLikeOnly(pid);
-  if (done) heartBurst(); // 失败（限流/离线）只留 toast，不炸心
+  if (done) heartBurst(origin); // 失败（限流/离线）只留 toast，不炸心
 }
 
 // 桌面/触屏笔电：dblclick
@@ -231,11 +231,16 @@ document.addEventListener('touchend', (e) => {
   }
 }, { passive: false });
 
-// 纯 CSS 粒子：向上扇形喷出爱心，落回并淡出；不引任何库
-function heartBurst() {
+// 纯 CSS 粒子：向上扇形喷出爱心并渐隐；不引任何库。
+// origin 省略时以视口中心为原点（双击），传入时以该元素/点位为原点（点点赞按钮）。
+function heartBurst(origin) {
   if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const layer = document.createElement('div');
   layer.className = 'burst';
+  if (origin) {                       // 覆盖 CSS 的 left/top: 50%，让粒子从按钮处冒出
+    layer.style.left = origin.x + 'px';
+    layer.style.top = origin.y + 'px';
+  }
   for (let i = 0; i < 16; i++) {
     const s = document.createElement('span');
     s.className = 'burst-h';
@@ -496,8 +501,14 @@ document.addEventListener('click', async (e) => {
   const likeBtn = t.closest && t.closest('.like-row');
   if (likeBtn) {
     e.stopPropagation();
-    const pid = likeBtn.closest('.post').dataset.pid;
-    await handleLike(pid);
+    const postEl = likeBtn.closest('.post');
+    const pid = postEl.dataset.pid;
+    const p = state.posts.find((x) => x.id === pid);
+    const already = p && p.likes.some((l) => l.client_key === getClientKey());
+    if (already) { await handleLike(pid); return; }  // 已赞→撤销，不喷心
+    // 原点取按钮自身的中心（视口坐标），爱心就从"点赞"处冒出来
+    const r = likeBtn.getBoundingClientRect();
+    await likeAt(postEl, { x: r.left + r.width / 2, y: r.top + r.height / 2 });
     return;
   }
 
