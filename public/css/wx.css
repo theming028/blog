@@ -151,10 +151,21 @@ input, textarea, select { font-family: inherit; }
   content: ""; position: absolute; top: -4px; right: 14px;
   width: 8px; height: 8px; background: var(--wx-box); transform: rotate(45deg); border-radius: 1px;
 }
-.like-row { display: flex; padding: 7px 10px; align-items: center; }
-.like-row svg { width: 16px; height: 16px; fill: var(--wx-blue); margin-right: 6px; flex: none; }
-.like-row.mine svg { fill: var(--wx-red); } /* 我赞过的心标红，替代原来的昵称清单 */
-.like-count { color: var(--wx-blue); font-variant-numeric: tabular-nums; letter-spacing: .2px; }
+/* 三态：0 赞=描边心+"点赞"（可点入口）；有人赞=实心蓝心+计数；我赞过=实心红心。
+   注意底色是 .acts 的 #F7F7F7，用灰色会灰压灰（约 1.6:1 几乎看不见），
+   统一用主题蓝，对比度约 5.2:1 达 AA。hover 时描边心填实，预告"点一下就赞"。 */
+.like-row {
+  display: flex; padding: 7px 10px; align-items: center; margin: 0; width: 100%;
+  font: inherit; color: inherit; background: none; border: 0; border-radius: 0;
+  -webkit-appearance: none; appearance: none; cursor: pointer; text-align: left;
+}
+.like-row svg { width: 16px; height: 16px; margin-right: 6px; flex: none; fill: var(--wx-blue); stroke: none; }
+.like-row:not(.num) svg { fill: none; stroke: var(--wx-blue); stroke-width: 1.6; }
+.like-row.mine svg { fill: var(--wx-red); stroke: none; }
+.like-row:hover svg { fill: var(--wx-blue); stroke: none; }
+.like-row.mine:hover svg { fill: var(--wx-red); stroke: none; }
+.like-count, .like-word { color: var(--wx-blue); font-size: 13px; }
+.like-count { font-variant-numeric: tabular-nums; letter-spacing: .2px; }
 .acts-sep { height: .5px; background: #E5E5E5; margin: 0 10px; }
 .cmt-list { padding: 5px 10px 8px; }
 .cmt { line-height: 1.55; color: var(--wx-text); padding: 2px 0; cursor: pointer; word-break: break-word; }
@@ -333,14 +344,14 @@ input, textarea, select { font-family: inherit; }
 .burst-h {
   position: absolute; left: 0; top: 0; width: var(--sz); height: var(--sz);
   margin: calc(var(--sz) / -2) 0 0 calc(var(--sz) / -2);
-  opacity: 0; animation: burstUp 900ms cubic-bezier(.18, .72, .3, 1) forwards;
+  opacity: 0; animation: burstOut 1000ms cubic-bezier(.1, .62, .3, 1) forwards;
 }
 .burst-h svg { width: 100%; height: 100%; fill: var(--wx-red); filter: drop-shadow(0 2px 6px rgba(250, 81, 81, .35)); }
-@keyframes burstUp {
-  0%   { opacity: 0; transform: translate(0, 0) scale(.25) rotate(0deg); }
+/* 喷出后一路向外淡出，不落回：末段仍继续外扩，透明度线性归零 */
+@keyframes burstOut {
+  0%   { opacity: 0; transform: translate(0, 0) scale(.3) rotate(0deg); }
   14%  { opacity: 1; }
-  58%  { opacity: 1; transform: translate(var(--tx), var(--ty)) scale(1.12) rotate(var(--rot)); }
-  100% { opacity: 0; transform: translate(calc(var(--tx) * 1.12), var(--fall)) scale(.62) rotate(var(--rot)); }
+  100% { opacity: 0; transform: translate(var(--tx), var(--ty)) scale(1.18) rotate(var(--rot)); }
 }
 /* 系统开了"减弱动态效果"就不放粒子，只保留计数变化 */
 @media (prefers-reduced-motion: reduce) { .burst { display: none; } }

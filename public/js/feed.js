@@ -58,13 +58,17 @@ function renderPost(p) {
   const hasLikes = p.likes.length > 0;
   const hasCmts = p.comments.length > 0;
   let actsHtml = '';
-  if (hasLikes || hasCmts) {
-    // 不再列昵称，改为"心形 + 总数"；我赞过时加 .mine 让心变实心（数据里仍存 name，只是不展示）
-    const likeRow = hasLikes
-      ? `<div class="like-row${liked ? ' mine' : ''}">${ICON_LIKE_SM}<span class="like-count">${p.likes.length}</span></div>` : '';
-    const sep = hasLikes && hasCmts ? '<div class="acts-sep"></div>' : '';
+  {
+    // 没人赞过时不空着，显示"❤ 点赞"当作点赞入口；有人赞了显示总数，我赞过心标红
+    const likeInner = hasLikes
+      ? `<span class="like-count">${p.likes.length}</span>`
+      : '<span class="like-word">点赞</span>';
+    const cls = ['like-row', hasLikes ? 'num' : '', liked ? 'mine' : ''].filter(Boolean).join(' ');
+      const likeRow = `<button type="button" class="${cls}" data-act="like" aria-pressed="${liked}">${ICON_LIKE_SM}${likeInner}</button>`;
+    const sep = hasCmts ? '<div class="acts-sep"></div>' : '';
     const cmts = hasCmts
       ? `<div class="cmt-list">` + p.comments.map((c) => renderComment(c)).join('') + '</div>' : '';
+    // acts 现在恒定渲染：0 赞也要有那个"❤ 点赞"入口
     actsHtml = `<div class="acts">${likeRow}${sep}${cmts}</div>`;
   }
 
@@ -188,7 +192,7 @@ async function addLikeOnly(pid) {
 }
 
 /* ---------- 双击点赞 + 爱心喷发 ---------- */
-const LIKE_EXCLUDE = 'a, button, input, textarea, .cbar, .p-toggle, .pop, .cmt, .cmt-more, .p-single img, .p-grid img, .blogroll-item, .viewer';
+const LIKE_EXCLUDE = 'a, button, input, textarea, .like-row, .cbar, .p-toggle, .pop, .cmt, .cmt-more, .p-single img, .p-grid img, .blogroll-item, .viewer';
 const tapMemo = { pid: '', t: 0, x: 0, y: 0 };
 
 function likeAt(postEl) {
@@ -235,7 +239,6 @@ function heartBurst() {
     const dist = 90 + Math.random() * 120;
     s.style.setProperty('--tx', (Math.cos(ang) * dist).toFixed(1) + 'px');
     s.style.setProperty('--ty', (Math.sin(ang) * dist).toFixed(1) + 'px');
-    s.style.setProperty('--fall', (Math.sin(ang) * dist + 120 + Math.random() * 80).toFixed(1) + 'px');
     s.style.setProperty('--rot', (Math.random() * 80 - 40).toFixed(0) + 'deg');
     s.style.setProperty('--sz', (16 + Math.random() * 18).toFixed(0) + 'px');
     s.style.animationDelay = (Math.random() * 120).toFixed(0) + 'ms';
@@ -243,7 +246,7 @@ function heartBurst() {
     layer.appendChild(s);
   }
   document.body.appendChild(layer);
-  setTimeout(() => layer.remove(), 1200); // 动画结束即摘除，不留幽灵节点
+  setTimeout(() => layer.remove(), 1200); // 覆盖 1000ms 动画 + 最长 120ms 延迟，摘干净不留幽灵节点
 }
 
 /* ---------- 评论栏：挂在对应朋友圈的 acts 容器内（支持 回复 / 编辑自己的评论） ---------- */
@@ -482,6 +485,15 @@ document.addEventListener('click', async (e) => {
     const pid = toggle.dataset.pid;
     if (toggle.classList.contains('on')) closePop();
     else openPop(toggle, pid);
+    return;
+  }
+
+  // 「❤ 点赞」按钮：未赞则 +1，已赞则清空我在这一条的赞
+  const likeBtn = t.closest && t.closest('.like-row');
+  if (likeBtn) {
+    e.stopPropagation();
+    const pid = likeBtn.closest('.post').dataset.pid;
+    await handleLike(pid);
     return;
   }
 
