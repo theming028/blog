@@ -133,21 +133,25 @@ input, textarea, select { font-family: inherit; }
 
 /* 点赞/评论 深色气泡 */
 .pop {
-  position: absolute; right: 34px; top: 50%; z-index: 30;
-  /* 居中改用 translateY(-50%)，不再硬编码 margin-top:-17px：
-     气泡高度随 .pop-item 的 padding 变（触屏 9px→12px 时半高约 21px），
-     固定 -17px 会让整体下沉几像素，正好是"移动端更明显"的那个观感 */
-  transform: translateY(-50%);
+  /* 竖直居中交给独立的 translate 属性，不再硬编码 margin-top 半高（旧值 -17px 比
+     实际半高 35/2=17.5 少 0.5px，触屏 padding 12→16 后 item 高 41、半高 20.5，
+     差到 3.5px，就是"气泡比 ··· 低一截、移动端更明显"的那个观感）。
+     也不能用 transform: translateY(-50%)：popin 动画写的正是 transform: scale()，
+     两者互相覆盖，动画那 130ms 里居中会整个失效（先低后跳，看着像抖）。
+     translate 与 transform 是两个独立属性，可叠加，且与气泡高度无关，
+     所以 .pop-item 的 padding 怎么改都不需要再同步一个魔法数。 */
+  position: absolute; right: 34px; top: 50%; translate: 0 -50%; z-index: 30;
   background: #4C4C4C; border-radius: 5px; display: flex; color: #fff;
   box-shadow: 0 2px 12px rgba(0, 0, 0, .25);
   animation: popin .13s ease-out; transform-origin: right center;
 }
-@keyframes popin { from { opacity: 0; transform: translateY(-50%) scale(.85); } }
-/* 箭头中心要落在 ··· 的中心（距右缘 14px）上。伪元素宽 8px，气泡右缘在 34px，
-   所以 right 取 -24px：右缘 34-24=10px，中心 10+4=14px。
-   旧值 -3.5px 让箭头停在距右缘 34.5px 处 —— 偏左 20px，点赞按钮搬到附近后正指着它。 */
+@keyframes popin { from { opacity: 0; transform: scale(.85); } }
+/* 箭头贴在气泡右缘、只作视觉尖角，垂直方向跟着 .pop 一起居中（::before 的 top:50%
+   相对的是 .pop 自身高度，margin-top:-4px 正好抵消 8px 菱形的一半）。
+   曾把它推到 right:-24px 去追 ··· 的水平中心，结果菱形脱离气泡主体、
+   在气泡右边悬成一个独立方块——用户说的"下沉"是垂直问题，水平方向不是。 */
 .pop::before {
-  content: ""; position: absolute; right: -24px; top: 50%; margin-top: -4px;
+  content: ""; position: absolute; right: -3.5px; top: 50%; margin-top: -4px;
   width: 8px; height: 8px; background: #4C4C4C; transform: rotate(45deg); border-radius: 1px;
 }
 .pop-item { display: flex; align-items: center; gap: 6px; padding: 9px 18px; font-size: 14px; white-space: nowrap; cursor: pointer; }
@@ -157,8 +161,7 @@ input, textarea, select { font-family: inherit; }
 /* 点赞评论灰盒 */
 .acts { background: var(--wx-box); border-radius: 4px; margin-top: 8px; position: relative; font-size: 13px; }
 .acts::before {
-  /* 同理对准 ··· 中心：菱形宽 8，中心 = right + 4，取 10px 使中心落在距右缘 14px */
-  content: ""; position: absolute; top: -4px; right: 10px;
+  content: ""; position: absolute; top: -4px; right: 14px;
   width: 8px; height: 8px; background: var(--wx-box); transform: rotate(45deg); border-radius: 1px;
 }
 /* 点赞入口现在住在 .p-foot 里、··· 按钮左侧 8px，所以做成紧凑内联小按钮，不再占整行。
@@ -397,6 +400,8 @@ input, textarea, select { font-family: inherit; }
   .pager .pg-num, .pager .pg-arrow { min-width: 40px; height: 40px; }
   .emoji-cell { padding: 7px 0; }
   .pop-item { padding: 12px 16px; }
+  /* 这里不再给 .pop 补 margin-top：气泡改用 translate: 0 -50% 居中，与 item 高度无关，
+     padding 变大也仍然正对着 ···（旧写法每改一次 padding 就得同步一个魔法数）。 */
   /* 全局行距统一到 1.45（仅触屏，PC 不变）。
      body 一设即可覆盖所有未自声明 line-height 的元素（含 .cmt-body/.nm/.rn 继承链）；
      下面这几个是文件里自行声明过 line-height 的选择器，必须逐个点名——
