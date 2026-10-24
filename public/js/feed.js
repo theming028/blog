@@ -463,14 +463,30 @@ async function sendComment() {
 }
 
 /* ---------- 大图查看器 ---------- */
-function showViewer() {
+function showViewer(mode) {
   const { imgs, i } = state.viewer;
-  $('#vImg').src = imgUrl(imgs[i]);
+  const el = $('#vImg');
   $('#vCount').textContent = `${i + 1}/${imgs.length}`;
   $('#viewer').classList.toggle('single', imgs.length < 2); // 单图不显示翻页箭头
   $('#viewer').classList.add('show');
+  const cls = mode === 'next' ? 'v-slide-next' : mode === 'prev' ? 'v-slide-prev' : 'v-fade-in';
+  const play = () => {
+    // 必须等新图真的换上来再播：src 一改浏览器往往仍显示旧帧直到解码完成，
+    // 这时加动画类会把"上一张图"平移一遍，看起来像在搬旧图。
+    if (!$('#viewer').classList.contains('show')) return; // 期间已关闭就别补播
+    el.classList.remove('v-slide-next', 'v-slide-prev', 'v-fade-in');
+    void el.offsetWidth;                                   // 强制重排，保证同向连点也能重播
+    el.classList.add(cls);
+  };
+  el.onload = play;
+  el.src = imgUrl(imgs[i]);
+  if (el.complete && el.naturalWidth) play();              // 命中缓存时 onload 可能不再触发
 }
-function hideViewer() { $('#viewer').classList.remove('show'); }
+function hideViewer() {
+  $('#viewer').classList.remove('show');
+  const el = $('#vImg');
+  if (el) el.classList.remove('v-slide-next', 'v-slide-prev', 'v-fade-in');
+}
 
 /* ---------- 事件绑定 ---------- */
 document.addEventListener('click', async (e) => {
@@ -513,7 +529,7 @@ document.addEventListener('click', async (e) => {
       // 记下"打开这一刻"的时间与位置：手机上双击照片的直觉是"点赞"，
       // 而第一击必然先把大图打开，所以在查看器里补判第二击（不延迟正常打开）
       state.viewerOpen = { t: Date.now(), x: e.clientX, y: e.clientY, pid: p.id };
-      showViewer();
+      showViewer('open');
     }
     return;
   }
@@ -620,13 +636,13 @@ function goPrev() {
   const v = state.viewer;
   if (v.imgs.length < 2) return;
   v.i = (v.i - 1 + v.imgs.length) % v.imgs.length;
-  showViewer();
+  showViewer('prev');
 }
 function goNext() {
   const v = state.viewer;
   if (v.imgs.length < 2) return;
   v.i = (v.i + 1) % v.imgs.length;
-  showViewer();
+  showViewer('next');
 }
 $('#vPrev').addEventListener('click', goPrev);
 $('#vNext').addEventListener('click', goNext);
