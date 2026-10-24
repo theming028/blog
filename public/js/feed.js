@@ -541,7 +541,10 @@ $('#cbarCancel').addEventListener('click', () => closeCbar());
 $('#emojiBtn').addEventListener('click', (e) => { e.stopPropagation(); toggleEmoji(); });
 $('#emojiPanel').addEventListener('click', (e) => {
   const cell = e.target.closest('.emoji-cell');
-  if (cell) { e.stopPropagation(); insertEmoji(cell.textContent); }
+  if (!cell) return;                       // 点面板空白处不选字也不关（外点兜底才收）
+  e.stopPropagation();
+  insertEmoji(cell.textContent);
+  hideEmoji();                             // 选完即收起：浮层压在输入框上方，留着会挡住继续编辑
 });
 
 $('#vClose').addEventListener('click', hideViewer);
