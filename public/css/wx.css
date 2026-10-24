@@ -281,23 +281,7 @@ input, textarea, select { font-family: inherit; }
   -webkit-backdrop-filter: blur(20px) saturate(120%); backdrop-filter: blur(20px) saturate(120%);
 }
 .viewer.show { display: flex; }
-/* 切图微动效：190ms 的方向性平移 + 淡入 + 极小缩放，够让人感觉到"翻了一页"，
-   又不会拖慢连续快翻。打开首图只做淡入，不做位移，避免"图在飞进来"的错觉。 */
-.v-slide-next { animation: vSlideInRight 190ms ease-out both; }
-.v-slide-prev { animation: vSlideInLeft 190ms ease-out both; }
-.v-fade-in { animation: vFadeIn 150ms ease-out both; }
-@keyframes vSlideInRight {
-  from { opacity: 0; transform: translateX(26px) scale(.985); }
-  to   { opacity: 1; transform: none; }
-}
-@keyframes vSlideInLeft {
-  from { opacity: 0; transform: translateX(-26px) scale(.985); }
-  to   { opacity: 1; transform: none; }
-}
-@keyframes vFadeIn { from { opacity: 0; } to { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) {
-  .v-slide-next, .v-slide-prev, .v-fade-in { animation: none; }
-}
+
 .viewer img { max-width: 100vw; max-height: 100vh; max-height: 100dvh; object-fit: contain; user-select: none; touch-action: pan-y; }
 /* pointer-events:none 让这条横跨全宽的计数条不吞掉点击，顶部黑边才能用来关闭预览 */
 .v-count { position: absolute; top: calc(14px + env(safe-area-inset-top)); left: 0; right: 0; text-align: center; color: rgba(255,255,255,.9); font-size: 15px; z-index: 2; pointer-events: none; }
