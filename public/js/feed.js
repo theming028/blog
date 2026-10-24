@@ -9,6 +9,7 @@ const state = {
   cmtExpanded: new Set(), // 已点开的长评论 id，重渲染后保持展开
   viewer: { imgs: [], i: 0 },
   swipeGuard: 0,      // 横滑翻页后短暂抑制浏览器补发的 click，避免误关预览
+  viewerOpen: null,   // {t,x,y,pid} 打开大图的时刻与位置，用于识别"双击照片点赞"的第二击
   replyTo: null,      // { id, name } 回复某条评论
   activePid: null,    // 评论栏当前对应的朋友圈
   editingCid: null,   // 正在编辑的评论 id
@@ -63,7 +64,9 @@ function renderPost(p) {
     ? `<span class="like-count">${p.likes.length}</span>`
     : '<span class="like-word">点赞</span>';
   const likeCls = ['like-row', hasLikes ? 'num' : '', liked ? 'mine' : ''].filter(Boolean).join(' ');
-  const likeBtn = `<button type="button" class="${likeCls}" data-act="like" aria-pressed="${liked}" title="点赞">${ICON_LIKE_SM}${likeInner}</button>`;
+    // title 要跟随状态：气泡里那个"取消点赞"入口已删掉，红色实心心如何撤销必须能被看出来
+    const titleAttr = liked ? '已点赞，点击取消' : hasLikes ? '双击内容也可点赞' : '点赞';
+    const likeBtn = `<button type="button" class="${likeCls}" data-act="like" aria-pressed="${liked}" title="${titleAttr}">${ICON_LIKE_SM}${likeInner}</button>`;
 
   // 点赞搬走后 .acts 回到"只有评论才渲染"，零互动帖子不再多一条灰盒
   const actsHtml = hasCmts
@@ -144,7 +147,6 @@ function openPop(toggleEl, pid) {
   const pop = document.createElement('div');
   pop.className = 'pop';
   pop.innerHTML = `
-    <div class="pop-item" data-act="like">${ICON_HEART}<span>${liked ? '取消点赞' : '点赞'}</span></div>
     <div class="pop-item" data-act="cmt">${ICON_CMT}<span>评论</span></div>`;
   toggleEl.classList.add('on');
   toggleEl.parentElement.appendChild(pop);
@@ -153,8 +155,9 @@ function openPop(toggleEl, pid) {
     if (!item) return;
     e.stopPropagation(); // 气泡自身的监听已处理这条点击，不必再冒到 document 走外点兜底
     closePop();
-    if (item.dataset.act === 'like') await handleLike(pid);
-    else openCbar(pid, null);
+    openCbar(pid, null);
+    // 气泡里不再放"点赞/取消点赞"：右下角已有常驻按钮，两个入口行为还不完全一致（一个 +1、一个清空）
+    void liked;
   });
 }
 
@@ -194,11 +197,13 @@ async function addLikeOnly(pid) {
 const LIKE_EXCLUDE = 'a, button, input, textarea, .like-row, .cbar, .p-toggle, .pop, .cmt, .cmt-more, .p-single img, .p-grid img, .blogroll-item, .viewer';
 const tapMemo = { pid: '', t: 0, x: 0, y: 0 };
 
-function likeAt(postEl) {
+async function likeAt(postEl) {
   const pid = postEl.dataset.pid;
   if (!pid) return;
-  heartBurst();
-  addLikeOnly(pid);
+  // 先等结果再放特效：之前是"先炸心再发请求"，被限流或离线时心炸了但计数没变，视觉在说谎。
+  // 本地/内网这一跳通常几毫秒；真机上一来一回也远快于人眼对"双击"的判定。
+  const done = await addLikeOnly(pid);
+  if (done) heartBurst(); // 失败（限流/离线）只留 toast，不炸心
 }
 
 // 桌面/触屏笔电：dblclick
@@ -505,6 +510,9 @@ document.addEventListener('click', async (e) => {
     const p = state.posts.find((x) => x.id === img.dataset.pid);
     if (p) {
       state.viewer = { imgs: p.images, i: Number(img.dataset.idx) || 0 };
+      // 记下"打开这一刻"的时间与位置：手机上双击照片的直觉是"点赞"，
+      // 而第一击必然先把大图打开，所以在查看器里补判第二击（不延迟正常打开）
+      state.viewerOpen = { t: Date.now(), x: e.clientX, y: e.clientY, pid: p.id };
       showViewer();
     }
     return;
@@ -622,9 +630,18 @@ function goNext() {
 }
 $('#vPrev').addEventListener('click', goPrev);
 $('#vNext').addEventListener('click', goNext);
-$('#vImg').addEventListener('click', () => {
+$('#vImg').addEventListener('click', (e) => {
   // 刚横向滑完时浏览器可能补发一次 click，别把"滑动翻页"误判成"点图关闭"
   if (Date.now() - state.swipeGuard < 600) return;
+  const vo = state.viewerOpen;
+  // 打开后 350ms 内同一位置再点一次 = 手机上"双击照片点赞"：点赞并保持打开，不关闭
+  if (vo && vo.pid && Date.now() - vo.t < 350
+      && Math.abs(e.clientX - vo.x) < 40 && Math.abs(e.clientY - vo.y) < 40) {
+    state.viewerOpen = null;
+    const postEl = $(`.post[data-pid="${vo.pid}"]`);
+    if (postEl) likeAt(postEl);
+    return;
+  }
   hideViewer();
 });
 

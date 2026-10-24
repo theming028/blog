@@ -47,13 +47,27 @@ node -e "console.log(require('crypto').createHash('sha256').update('tm-blog-salt
 - **CSP 为 `script-src 'self'`**：不要往 HTML 里加内联 `<script>`，会被拦。内联样式属性可以用（`style-src` 允许 `unsafe-inline`）。
 - **全局字体**在两份 CSS 的 `body` 上（`wx.css` 前台，`admin.css` 后台/发布/登录），表单控件靠 `font-family: inherit` 跟上。
 - 评论反垃圾在 `lib/spam.js`，命中转 `pending` 进后台待审，前台不展示。
+- **点赞是累加模型**：`POST /api/posts/:id/like` 每次记一行（双击可累加），`DELETE` 清空该访客在这条下的全部赞；
+  按 `IP+帖子` 节流（1 秒 3 次 / 60 秒 60 次）。**不要**给 `likes` 加唯一索引或在应用层恢复去重查询。
+- **访客计数**：`POST /api/visit`（公开）只存 `sha256(固定盐 + IP)` 截 32 位，不落原始 IP。取 IP 依次试
+  `ali-swift-real-client-ip` / `x-real-ip` / `cf-connecting-ip` → `x-forwarded-for` 首段 → socket，
+  每段都过 `net.isIP`；并按**不可伪造的 socket IP** 节流（60 秒 20 次）。云端计数缓存 60 秒，
+  兜底查询恒带 `limit=1`，绝不做全表拉取。CDN 后可能因共享出口 IP 而少计。
 
 ## 发布
 
 QW Pages（动态页）：`category: "dynamic"`、`entrypoint: "server.js"`、`port: 8081`、`with_database: true`，先 provision 再建表。
 同一项目重复发布会发到**同一域名并递增版本号**，不会新开站点。
 
-建表需覆盖 `posts / comments / likes / images / settings / links`；注意 `createPost`/`addComment`/`addLike`/`createLink` **不下发 `id`**，评论/点赞/友链也不下发 `created_at`，所以这些列必须有数据库默认值，否则写入直接失败；`likes(post_id, client_key)` 需要唯一索引（`addLike` 的幂等依赖它）。
+建表需覆盖 **7 张表**：`posts / comments / likes / images / settings / links / visitors`。
+注意 `createPost`/`addComment`/`addLike`/`createLink` **不下发 `id`**，评论/点赞/友链也不下发 `created_at`，
+所以这些列必须有数据库默认值，否则写入直接失败；`visitors` 以 `hash` 作主键，重复上报靠
+`Prefer: resolution=ignore-duplicates` 去重。
+
+> ⚠️ **不要给 `likes(post_id, client_key)` 建唯一索引。** 点赞是"双击可累加"模型
+> （`POST /api/posts/:id/like` 每次都记一行，取消则清空该访客在这条下的全部赞）。
+> 唯一索引会让第二次及以后的赞被数据库静默丢弃——不报错、界面只是"点不动"，极难排查。
+> 同理，别在应用层恢复"是否已赞"的去重查询。
 
 ## 已知待办
 

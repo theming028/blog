@@ -8,6 +8,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const net = require('net'); // clientIp() 用它做 net.isIP 校验
 const { makeStore } = require('./lib/store');
 const { seedIfEmpty } = require('./lib/seed');
 const { migrateSnapshotToCloud } = require('./lib/migrate');
@@ -92,12 +93,33 @@ const loginFails = new Map(); // key -> { n, first }
 
 function clientIp(req) {
   const h = req.headers;
-  // 取真实访客 IP 的优先级：CDN/网关自己写的头不可伪造，最可信；XFF 最左一段是客户端可自报的
+  // 候选顺序：CDN 自己写的头不可伪造优先，其次 XFF 最左段，最后 socket。
+  // 但每一段都要过 net.isIP —— 否则客户端塞一个任意字符串进来就能凭空造一个"新访客"。
   const real = h['ali-swift-real-client-ip'] || h['x-real-ip'] || h['cf-connecting-ip'];
-  if (typeof real === 'string' && real.trim()) return real.trim();
   const xff = h['x-forwarded-for'];
-  if (typeof xff === 'string' && xff.trim()) return xff.split(',')[0].trim();
-  return (req.socket && req.socket.remoteAddress) || 'unknown';
+  const candidates = [real, typeof xff === 'string' ? xff.split(',')[0] : '', req.socket && req.socket.remoteAddress];
+  for (const c of candidates) {
+    const v = typeof c === 'string' ? c.trim() : '';
+    if (v && net.isIP(v)) return v;
+  }
+  return 'unknown';
+}
+
+/* socket IP 不可伪造，用它给 /api/visit 兜一道节流：
+ * 单个来源 60 秒内最多 20 次上报（真实用户刷新几十次才会撞上，脚本会立刻被限）。 */
+const VISIT_WINDOW_MS = 60 * 1000, VISIT_MAX = 20;
+const visitHits = new Map();
+function visitLimited(req) {
+  const sock = (req.socket && req.socket.remoteAddress) || 'unknown';
+  const now = Date.now();
+  let arr = (visitHits.get(sock) || []).filter((t) => now - t < VISIT_WINDOW_MS);
+  if (arr.length >= VISIT_MAX) { visitHits.set(sock, arr); return true; }
+  arr.push(now);
+  visitHits.set(sock, arr);
+  if (visitHits.size > 5000) {
+    for (const [k, v] of visitHits) if (!v.some((t) => now - t < VISIT_WINDOW_MS)) visitHits.delete(k);
+  }
+  return false;
 }
 
 
@@ -512,6 +534,10 @@ async function handleApi(req, res, pathname, query) {
 
   /* ---------- 独立访客计数（公开，只收 POST，由页面 JS 上报） ---------- */
   if (pathname === '/api/visit' && method === 'POST') {
+    if (visitLimited(req)) {
+      // 超限不再新增，但仍回真实总数：页脚那行不该因为限流而突然消失
+      return sendJson(res, 200, { visitors: await store.countVisitors(), limited: true });
+    }
     const total = await store.touchVisitor(visitorHash(clientIp(req)));
     return sendJson(res, 200, { visitors: total });
   }
