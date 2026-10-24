@@ -329,6 +329,16 @@ input, textarea, select { font-family: inherit; }
   .emoji-cell { padding: 7px 0; }
   .pop-item { padding: 12px 16px; }
   .cmt-op { font-size: 13px; }
+  /* 全局行距统一到 1.45（仅触屏，PC 不变）。
+     body 一设即可覆盖所有未自声明 line-height 的元素（含 .cmt-body/.nm/.rn 继承链）；
+     下面这几个是文件里自行声明过 line-height 的选择器，必须逐个点名——
+     通用选择器 * 的优先级低于类选择器，光写 * { line-height } 覆盖不掉 .cmt{1.55}。
+     刻意排除：.cbar-field textarea（行距是 px 且与静止高度公式 40=22+9×2 绑定，改了会让自动撑高跳变）、
+     .emoji-cell（1.2 是表情网格字形单元格的尺寸依据）。 */
+  body, .p-name, .p-text, .like-names, .cmt, .dlg-msg,
+  .copyright, .blogroll-item { line-height: 1.45; }
+  /* 评论者昵称在触屏下提到中粗，从灰底正文里区分出来 */
+  .cmt .nm { font-weight: 500; }
   /* 热区撤掉后翻页只能点按钮本身，尺寸给到 44px 才够手指按 */
   .v-arrow { width: 44px; height: 44px; }
   .v-nav { gap: 20px; bottom: calc(26px + env(safe-area-inset-bottom)); }
