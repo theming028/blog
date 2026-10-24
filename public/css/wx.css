@@ -17,6 +17,7 @@ body {
   --wx-line: #E7E7E7;
   --wx-green: #07C160;
   --wx-red: #FA5151;
+  --phone-w: 680px;    /* 版面宽度唯一来源：.phone 与 .nav 都引用它，避免两处各写一份而走偏 */
 }
 img { -webkit-user-drag: none; }
 a { text-decoration: none; color: inherit; }
@@ -25,7 +26,7 @@ button { font-family: inherit; }
 input, textarea, select { font-family: inherit; }
 
 .phone {
-  max-width: 640px;
+  max-width: var(--phone-w);
   margin: 0 auto;
   min-height: 100vh;      /* 不支持 dvh 的旧内核兜底 */
   min-height: 100dvh;     /* 移动浏览器地址栏收放后真实可见高度，避免底部内容被遮 */
@@ -36,7 +37,7 @@ input, textarea, select { font-family: inherit; }
 /* ============ 顶部导航栏 ============ */
 .nav {
   position: fixed; top: 0; left: 0; right: 0; margin: 0 auto;
-  width: 100%; max-width: 640px;
+  width: 100%; max-width: var(--phone-w); /* 与 .phone 同 token，版面加宽时不会错位 */
   /* viewport-fit=cover 下必须自己让出刘海/状态栏高度，否则标题被压住 */
   height: calc(44px + env(safe-area-inset-top));
   padding-top: env(safe-area-inset-top);
@@ -67,9 +68,10 @@ input, textarea, select { font-family: inherit; }
 
 /* ============ 封面 ============ */
 .cover { position: relative; height: 280px; background: #26282B; }
-/* 槽位是 640×280 横条，原图 918×1128 竖构图，object-fit:cover 默认居中只保留
-   画面 37%–62% —— 骑车人和狗（在底部约 85% 处）会被整块裁掉。这张封面必须贴底取。
-   ⚠️ 以后若换成主体居中的照片，要把这里改回 center。 */
+/* 槽位是 680×280 横条（版面宽 --phone-w），原图 918×1128 竖构图：cover 会等比放大到
+   680×836，可见带只有约 33.5% 高度。默认居中取的是中段约 33%–67%，
+   骑车人和狗（在底部约 85% 处）会被整块裁掉，所以这张必须贴底取。
+   ⚠️ 以后换成主体居中的照片时，把 object-position 改回 center。 */
 .cover .cover-img { width: 100%; height: 100%; object-fit: cover; object-position: center bottom; display: block; }
 .cover .cover-name {
   position: absolute; right: 105px; bottom: 8px;
@@ -103,7 +105,7 @@ input, textarea, select { font-family: inherit; }
 .p-grid img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; cursor: zoom-in; background: #F2F2F2; }
 /* 单图撑满内容容器。此前是 max-width:232px + max-height:320px，
    既不满宽、竖图还会被高度上限缩成小块。库里图片实测最窄 914px，
-   大于容器最大宽度（PC 约 538px / 手机约 293px），因此不会被放大失真。
+   大于容器最大宽度（PC 约 578px / 手机约 293px），因此不会被放大失真。
    ⚠️ 不要再给这条加 max-height：width:100% 配 max-height 会把超高竖图直接压扁，
    想限高只能改用 object-fit:contain 留白，但那样就谈不上"撑满"了。 */
 .p-single img { width: 100%; height: auto; display: block; cursor: zoom-in; margin-top: 8px; background: #F2F2F2; }
@@ -272,7 +274,11 @@ input, textarea, select { font-family: inherit; }
 .v-nav {
   position: absolute; left: 50%; transform: translateX(-50%);
   bottom: calc(22px + env(safe-area-inset-bottom));
-  display: flex; gap: 16px; z-index: 3;
+  display: flex; gap: 16px; padding: 8px; z-index: 3;
+  /* 毛玻璃容器：底色要够淡才透出后面的画面，saturate 让玻璃下的颜色更实一点 */
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .12);
+  -webkit-backdrop-filter: blur(20px) saturate(160%); backdrop-filter: blur(20px) saturate(160%);
 }
 .v-arrow {
   flex: none; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%;
