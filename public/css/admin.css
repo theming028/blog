@@ -60,7 +60,9 @@ svg { display: block; }
 }
 .adm-top h1 { font-size: 18px; font-weight: 600; }
 .adm-top-actions { display: flex; align-items: center; gap: 10px; }
-.adm-body { padding: 24px; }
+/* 后台内容区收窄到 50% 并居中（box-sizing:border-box，50% 已含 24px 内距）。
+   注意：auto 边距是在侧栏之外的剩余空间里居中，不是整页几何居中。 */
+.adm-body { padding: 24px; width: 50%; margin: 0 auto; }
 .adm-user { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--adm-muted); }
 .adm-user .avatar { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; background: #E5E7EB; }
 
@@ -196,6 +198,9 @@ svg { display: block; }
 @media (max-width: 900px) {
   .adm-stats { grid-template-columns: repeat(2, 1fr); }
   .adm-photos { grid-template-columns: repeat(4, 1fr); }
+  /* 900px 以下恢复整宽：侧栏占 224px 后，50% 只剩 250–340px，6 列表格不可用。
+     想只在更宽的桌面才收窄，把 900 调大即可（1024 屏上 50% 也只有 400px）。 */
+  .adm-body { width: auto; }
 }
 @media (max-width: 720px) {
   .adm-side { position: fixed; left: 0; top: 0; z-index: 50; transform: translateX(-100%); transition: transform .2s; box-shadow: 0 0 30px rgba(0,0,0,.15); }
