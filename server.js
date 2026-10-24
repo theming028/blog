@@ -91,10 +91,15 @@ const LOGIN_WINDOW_MS = 60 * 1000;
 const loginFails = new Map(); // key -> { n, first }
 
 function clientIp(req) {
-  const xff = req.headers['x-forwarded-for'];
+  const h = req.headers;
+  // 取真实访客 IP 的优先级：CDN/网关自己写的头不可伪造，最可信；XFF 最左一段是客户端可自报的
+  const real = h['ali-swift-real-client-ip'] || h['x-real-ip'] || h['cf-connecting-ip'];
+  if (typeof real === 'string' && real.trim()) return real.trim();
+  const xff = h['x-forwarded-for'];
   if (typeof xff === 'string' && xff.trim()) return xff.split(',')[0].trim();
   return (req.socket && req.socket.remoteAddress) || 'unknown';
 }
+
 
 function loginLockInfo(key) {
   const rec = loginFails.get(key);
@@ -138,6 +143,12 @@ function likeWait(key) {
 }
 
 const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
+
+/* 独立访客：只存 sha256(ip + 固定盐)，不落原始 IP。
+ * 盐必须固定，否则每次重启所有访客都变"新人"、计数直接归零；
+ * 代价是拿到代码的人可以离线验证某个 IP 是否访问过（访客量级的小博客可接受）。 */
+const VISITOR_SALT = 'tm-blog-visitor-salt';
+const visitorHash = (ip) => sha256(VISITOR_SALT + ':' + ip).slice(0, 32);
 const hashEq = (a, b) => {
   const ba = Buffer.from(a, 'hex'), bb = Buffer.from(b, 'hex');
   return ba.length === bb.length && crypto.timingSafeEqual(ba, bb);
@@ -497,6 +508,12 @@ async function handleApi(req, res, pathname, query) {
     const updated = await store.updateComment(m[1], content);
     await store.updateCommentStatus(m[1], check.flagged ? 'pending' : 'visible', check.reason);
     return sendJson(res, 200, { comment: { ...updated, status: check.flagged ? 'pending' : 'visible' } });
+  }
+
+  /* ---------- 独立访客计数（公开，只收 POST，由页面 JS 上报） ---------- */
+  if (pathname === '/api/visit' && method === 'POST') {
+    const total = await store.touchVisitor(visitorHash(clientIp(req)));
+    return sendJson(res, 200, { visitors: total });
   }
 
   /* 只回白名单键：settings 里还有服务端自用的标记（如 _migrated），不能整包吐给浏览器 */

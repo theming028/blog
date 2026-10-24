@@ -151,22 +151,22 @@ input, textarea, select { font-family: inherit; }
   content: ""; position: absolute; top: -4px; right: 14px;
   width: 8px; height: 8px; background: var(--wx-box); transform: rotate(45deg); border-radius: 1px;
 }
-/* 三态：0 赞=描边心+"点赞"（可点入口）；有人赞=实心蓝心+计数；我赞过=实心红心。
-   注意底色是 .acts 的 #F7F7F7，用灰色会灰压灰（约 1.6:1 几乎看不见），
-   统一用主题蓝，对比度约 5.2:1 达 AA。hover 时描边心填实，预告"点一下就赞"。 */
+/* 点赞入口现在住在 .p-foot 里、··· 按钮左侧 8px，所以做成紧凑内联小按钮，不再占整行。
+   三态：0 赞=描边心+"点赞"；有赞=实心蓝心+计数；我赞过=实心红心。
+   底色注意：.p-foot 是白底（不是 .acts 的 #F7F7F7），但仍统一用主题蓝，对比度约 5.2:1 达 AA。 */
 .like-row {
-  display: flex; padding: 7px 10px; align-items: center; margin: 0; width: 100%;
-  font: inherit; color: inherit; background: none; border: 0; border-radius: 0;
-  -webkit-appearance: none; appearance: none; cursor: pointer; text-align: left;
+  display: inline-flex; align-items: center; flex: none;
+  margin: 0 8px 0 0; padding: 2px 4px; min-height: 22px;
+  font: inherit; font-size: 13px; color: inherit; background: none; border: 0; border-radius: 4px;
+  -webkit-appearance: none; appearance: none; cursor: pointer;
 }
-.like-row svg { width: 16px; height: 16px; margin-right: 6px; flex: none; fill: var(--wx-blue); stroke: none; }
-.like-row:not(.num) svg { fill: none; stroke: var(--wx-blue); stroke-width: 1.6; }
+.like-row svg { width: 15px; height: 15px; margin-right: 5px; flex: none; fill: var(--wx-blue); stroke: none; }
+.like-row:not(.num) svg { fill: none; stroke: var(--wx-blue); stroke-width: 1.7; }
 .like-row.mine svg { fill: var(--wx-red); stroke: none; }
 .like-row:hover svg { fill: var(--wx-blue); stroke: none; }
 .like-row.mine:hover svg { fill: var(--wx-red); stroke: none; }
-.like-count, .like-word { color: var(--wx-blue); font-size: 13px; }
+.like-count, .like-word { color: var(--wx-blue); line-height: 1.2; }
 .like-count { font-variant-numeric: tabular-nums; letter-spacing: .2px; }
-.acts-sep { height: .5px; background: #E5E5E5; margin: 0 10px; }
 .cmt-list { padding: 5px 10px 8px; }
 .cmt { line-height: 1.55; color: var(--wx-text); padding: 2px 0; cursor: pointer; word-break: break-word; }
 .cmt .nm, .cmt .rn { color: var(--wx-blue); }
@@ -328,7 +328,11 @@ input, textarea, select { font-family: inherit; }
    宽泛的子串匹配交给 common.js 带保护地移除 */
 #mulepage-footer, .mulepage-footer { display: none !important; }
 .loading { text-align: center; color: var(--wx-gray); font-size: 13px; padding: 40px 0; }
-.copyright { text-align: center; color: #B8B8B8; font-size: 12px; line-height: 1.8; padding: 20px 16px 40px; }
+.copyright { text-align: center; color: #B8B8B8; font-size: 12px; line-height: 1.8; padding: 20px 16px 6px; }
+/* 访客计数行：紧贴版权下方，同色同字号形成一组页脚信息。
+   :empty 是取数失败的兜底——不显示文字但仍把底部留白补回来，页脚不会突然缩短 */
+.visitors { text-align: center; color: #B8B8B8; font-size: 12px; line-height: 1.8; padding: 0 16px 40px; }
+.visitors:empty { padding: 0 16px 34px; }
 
 /* 网上邻居（友情链接）— 纯文字链接，无分割线；用页面灰底而非 .phone 的白底 */
 .blogroll { padding: 24px; background: var(--wx-bg); }

@@ -57,20 +57,18 @@ function renderPost(p) {
 
   const hasLikes = p.likes.length > 0;
   const hasCmts = p.comments.length > 0;
-  let actsHtml = '';
-  {
-    // 没人赞过时不空着，显示"❤ 点赞"当作点赞入口；有人赞了显示总数，我赞过心标红
-    const likeInner = hasLikes
-      ? `<span class="like-count">${p.likes.length}</span>`
-      : '<span class="like-word">点赞</span>';
-    const cls = ['like-row', hasLikes ? 'num' : '', liked ? 'mine' : ''].filter(Boolean).join(' ');
-      const likeRow = `<button type="button" class="${cls}" data-act="like" aria-pressed="${liked}">${ICON_LIKE_SM}${likeInner}</button>`;
-    const sep = hasCmts ? '<div class="acts-sep"></div>' : '';
-    const cmts = hasCmts
-      ? `<div class="cmt-list">` + p.comments.map((c) => renderComment(c)).join('') + '</div>' : '';
-    // acts 现在恒定渲染：0 赞也要有那个"❤ 点赞"入口
-    actsHtml = `<div class="acts">${likeRow}${sep}${cmts}</div>`;
-  }
+
+  // 点赞入口放在 .p-foot 里、··· 按钮左侧 8px：0 赞显示"♡ 点赞"，有赞显示实心蓝心+计数，我赞过标红
+  const likeInner = hasLikes
+    ? `<span class="like-count">${p.likes.length}</span>`
+    : '<span class="like-word">点赞</span>';
+  const likeCls = ['like-row', hasLikes ? 'num' : '', liked ? 'mine' : ''].filter(Boolean).join(' ');
+  const likeBtn = `<button type="button" class="${likeCls}" data-act="like" aria-pressed="${liked}" title="点赞">${ICON_LIKE_SM}${likeInner}</button>`;
+
+  // 点赞搬走后 .acts 回到"只有评论才渲染"，零互动帖子不再多一条灰盒
+  const actsHtml = hasCmts
+    ? `<div class="acts"><div class="cmt-list">` + p.comments.map((c) => renderComment(c)).join('') + '</div></div>'
+    : '';
 
   return `
   <div class="post" data-pid="${p.id}">
@@ -82,6 +80,7 @@ function renderPost(p) {
       ${locHtml}
       <div class="p-foot">
         <span class="p-time">${fmtTime(p.created_at)}</span>
+        ${likeBtn}
         <div class="p-toggle" data-pid="${p.id}"><i></i><i></i></div>
       </div>
       ${actsHtml}
@@ -703,6 +702,19 @@ async function checkAdmin() {
   }
 }
 
+/* ---------- 独立访客计数 ----------
+ * 由浏览器上报，因此爬虫和不执行 JS 的客户端不计入；失败就整行不显示，绝不影响读博客 */
+async function loadVisitors() {
+  const el = $('#visitors');
+  if (!el) return;
+  try {
+    const r = await api('/api/visit', { method: 'POST', body: {} });
+    if (r && typeof r.visitors === 'number' && r.visitors > 0) {
+      el.textContent = `你是第 ${r.visitors} 位访客`;
+    }
+  } catch (e) { /* 静默降级 */ }
+}
+
 /* ---------- 启动 ---------- */
 async function loadSettings() {
   try {
@@ -739,6 +751,7 @@ async function loadLinks() {
   await loadSettings();
   checkAdmin();
   loadLinks();
+  loadVisitors();            // 不 await：页脚计数不该挡信息流
   try {
     await loadPosts(1);
   } catch (e) {
