@@ -1,4 +1,4 @@
-/* 朝夕光年 · 管理后台：内容 / 评论（审核+批量删除） / 网上邻居 / 签名 / 外观 */
+/* 朝夕光年 · 管理后台：内容 / 评论（审核+批量删除） / 网上邻居 / 设置（签名+封面+头像+昵称） */
 'use strict';
 
 const ICON_IMG = '<svg viewBox="0 0 24 24"><path d="M21 3H3a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h18a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1zM8.5 9A1.5 1.5 0 1 1 7 10.5A1.5 1.5 0 0 1 8.5 9zM5 18l4.5-6 3 4 2.5-3 4 5z"/></svg>';
@@ -18,17 +18,20 @@ const STATUS_LABEL = { visible: '已显示', pending: '待审核', hidden: '已�
 const STATUS_CLS = { visible: 'pub', pending: 'warn', hidden: 'off' };
 
 /* ============ 视图切换 ============ */
-const VIEW_TITLE = { content: '内容管理', comments: '评论管理', links: '网上邻居' };
+const VIEW_TITLE = { content: '内容管理', comments: '评论管理', links: '网上邻居', settings: '设置' };
 function switchView(view) {
   if (!VIEW_TITLE[view]) view = 'content';
   $('#viewContent').hidden = view !== 'content';
   $('#viewComments').hidden = view !== 'comments';
   $('#viewLinks').hidden = view !== 'links';
+  $('#viewSettings').hidden = view !== 'settings';
   $$('.adm-nav-item[data-view]').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
   $('#pageTitle').textContent = VIEW_TITLE[view];
   document.title = `${VIEW_TITLE[view]} · 朝夕光年后台`;
   if (view === 'comments') loadComments();
   if (view === 'links') loadLinks();
+  // 注意：进设置视图时不重填表单。切走再切回就把半截昵称/签名冲掉，等于"隐式丢弃输入"；
+  // 值已经在 input 里，保持原样才对，换过的图也一样留在 settings 草稿里等保存。
   $('#side').classList.remove('open');
 }
 $$('.adm-nav-item[data-view]').forEach((b) => b.addEventListener('click', () => switchView(b.dataset.view)));
@@ -52,9 +55,13 @@ async function load() {
   startPolling();
 }
 
+/* 设置表单的唯一填充口：初次加载与保存成功后各调一次。
+   不在视图切换时调用——那会冲掉用户写到一半的昵称/签名。 */
 function renderSettings() {
   $('#pickCoverImg').src = settings.cover;
   $('#pickAvatarImg').src = settings.avatar;
+  $('#setNickInput').value = settings.nickname || '';
+  $('#signInput').value = settings.sign || '';
 }
 
 function renderStats() {
@@ -257,29 +264,11 @@ $('#dlgLinkOk').addEventListener('click', async () => {
   } catch (e) { alertDlg(e.message); }
 });
 
-/* ============ 签名管理 ============ */
-$('#btnOpenSign').addEventListener('click', () => { $('#signInput').value = settings.sign || ''; $('#dlgSign').classList.add('show'); });
-$('#dlgSignCancel').addEventListener('click', () => $('#dlgSign').classList.remove('show'));
-$('#dlgSignOk').addEventListener('click', async () => {
-  if (!settingsOk) { alertDlg('设置未能加载，为避免把已有配置覆盖成空值，已阻止保存。请刷新页面重试'); return; }
-  try {
-    const r = await api('/api/settings', { method: 'PUT', body: { sign: $('#signInput').value.trim() } });
-    settings = r.settings; // 服务端回的是合并后的完整值，不再需要本地默认值兜底
-    $('#dlgSign').classList.remove('show');
-    alertDlg('签名已保存');
-  } catch (e) { alertDlg(e.message || '保存失败'); }
-});
-
-/* ============ 外观设置弹窗 ============ */
-function openSetDlg() {
-  $('#pickCoverImg').src = settings.cover; $('#pickAvatarImg').src = settings.avatar; $('#setNickInput').value = settings.nickname;
-  $('#dlgSettings').classList.add('show');
-}
-$('#btnOpenSettings').addEventListener('click', openSetDlg);
-$('#dlgSetCancel').addEventListener('click', () => $('#dlgSettings').classList.remove('show'));
-$('#dlgSettings').addEventListener('click', (e) => { if (e.target === $('#dlgSettings')) $('#dlgSettings').classList.remove('show'); });
+/* ============ 设置（签名 + 封面图 + 头像 + 昵称，合并成一个表单一次保存） ============ */
 async function pickAndPreview(input, imgId, key) {
   const file = input.files && input.files[0]; input.value = ''; if (!file) return;
+  // 这里只落到本地 settings 与预览图上，不发 PUT：四件事必须一起保存，
+  // 免得"换完图以为已经好了"——保存键就摆在同一个表单里。
   try { const r = await uploadImageFile(file); settings[key] = r.url; $(`#${imgId}`).src = r.url; }
   catch (e) { alertDlg(e.message || '上传失败'); }
 }
@@ -287,11 +276,24 @@ $('#pickCover').addEventListener('click', () => $('#fileCover').click());
 $('#fileCover').addEventListener('change', (e) => pickAndPreview(e.target, 'pickCoverImg', 'cover'));
 $('#pickAvatar').addEventListener('click', () => $('#fileAvatar').click());
 $('#fileAvatar').addEventListener('change', (e) => pickAndPreview(e.target, 'pickAvatarImg', 'avatar'));
-$('#dlgSetOk').addEventListener('click', async () => {
+
+$('#btnSetSave').addEventListener('click', async () => {
+  // 取数失败时禁止保存：否则会把空值写回去覆盖真实配置（合并前两个弹窗各自都有这道闸）
   if (!settingsOk) { alertDlg('设置未能加载，为避免把已有配置覆盖成空值，已阻止保存。请刷新页面重试'); return; }
-  const nick = $('#setNickInput').value.trim(); if (!nick) { alertDlg('昵称不能为空'); return; }
-  try { const r = await api('/api/settings', { method: 'PUT', body: { cover: settings.cover, avatar: settings.avatar, nickname: nick } }); settings = r.settings; $('#dlgSettings').classList.remove('show'); alertDlg('已保存外观设置'); }
-  catch (e) { alertDlg(e.message || '保存失败'); }
+  const nick = $('#setNickInput').value.trim();
+  if (!nick) { alertDlg('昵称不能为空'); return; }
+  const btn = $('#btnSetSave');
+  btn.disabled = true; // 保存中禁用：连点会发两遍 PUT，第二遍带着同一份值，还会叠两个成功提示
+  try {
+    const r = await api('/api/settings', {
+      method: 'PUT',
+      body: { cover: settings.cover, avatar: settings.avatar, nickname: nick, sign: $('#signInput').value.trim() },
+    });
+    settings = r.settings; // 服务端回的是合并后的完整值，不再需要本地默认值兜底
+    renderSettings();
+    showToast('设置已保存');
+  } catch (e) { alertDlg(e.message || '保存失败'); }
+  finally { btn.disabled = false; }
 });
 
 /* ============ 新评论轮询提示 ============ */
@@ -319,10 +321,10 @@ $('#btnMenu').addEventListener('click', () => $('#side').classList.toggle('open'
 
 load();
 
-/* 支持从其它页面用 #hash 直达视图 / 弹窗 */
+/* 支持从其它页面用 #hash 直达视图。旧的 #sign / #settings 两个"开弹窗"入口
+   现在都指向同一个设置视图，别删：外部可能还留着这两个书签链接。 */
 (function routeHash() {
   const h = (location.hash || '').replace('#', '');
-  if (['content', 'comments', 'links'].includes(h)) switchView(h);
-  else if (h === 'sign') setTimeout(() => $('#btnOpenSign').click(), 300);
-  else if (h === 'settings') setTimeout(() => openSetDlg(), 300);
+  if (h === 'sign' || h === 'settings') switchView('settings');
+  else if (VIEW_TITLE[h]) switchView(h);
 })();

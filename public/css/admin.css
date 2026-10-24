@@ -77,6 +77,9 @@ svg { display: block; }
 .adm-btn.primary:hover { background: #4a5c80; }
 .adm-btn.danger { color: var(--adm-red); border-color: #F3C9CB; background: #fff; }
 .adm-btn.danger:hover { background: #FDEEEE; }
+/* 保存中的禁用态：设置表单的保存键连点会发两遍 PUT，禁用要有看得出来的样子
+   （原来只有 .adm-login-btn 有 disabled 样式，通用按钮没有） */
+.adm-btn:disabled { opacity: .6; cursor: default; pointer-events: none; }
 .adm-btn svg { width: 16px; height: 16px; fill: currentColor; }
 
 /* ---------- 统计卡 ---------- */

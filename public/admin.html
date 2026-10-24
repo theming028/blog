@@ -26,12 +26,11 @@
         <svg viewBox="0 0 24 24"><path d="M10.6 13.4a1 1 0 0 1 0-1.4l1.4-1.4a1 1 0 0 1 1.4 1.4L12 13.4a1 1 0 0 1-1.4 0zM8.5 15.5 7 17a3 3 0 0 0 4.2 4.2l1.5-1.5m2.8-8.2L19 7a3 3 0 1 0-4.2-4.2l-1.5 1.5"/></svg>
         网上邻居
       </button>
-      <div class="adm-nav-label">设置</div>
-      <button class="adm-nav-item" id="btnOpenSign">
-        <svg viewBox="0 0 24 24"><path d="M3 17.2V21h3.8L17.9 9.9l-3.8-3.8zM20.7 7.1a1 1 0 0 0 0-1.4l-2.4-2.4a1 1 0 0 0-1.4 0l-1.8 1.8 3.8 3.8z"/></svg>签名管理
-      </button>
-      <button class="adm-nav-item" id="btnOpenSettings">
-        <svg viewBox="0 0 24 24"><path d="M12 2 3 7v10l9 5 9-5V7zm0 2.3 6.5 3.6L12 13 5.5 9.5zM5 11.2l6 3.3v5.6l-6-3.3zm14 0v5.6l-6 3.3v-5.6z"/></svg>外观设置
+      <div class="adm-nav-label">站点</div>
+      <!-- 签名 / 封面图 / 头像 / 昵称 四件事合并成这一个视图：
+           原先"签名管理"和"外观设置"各自开一个弹窗，改一处要点两次、看两个保存键 -->
+      <button class="adm-nav-item" data-view="settings">
+        <svg viewBox="0 0 24 24"><path d="M12 2 3 7v10l9 5 9-5V7zm0 2.3 6.5 3.6L12 13 5.5 9.5zM5 11.2l6 3.3v5.6l-6-3.3zm14 0v5.6l-6 3.3v-5.6z"/></svg>设置
       </button>
     </nav>
     <div class="adm-side-foot">
@@ -111,36 +110,26 @@
           </table>
         </section>
       </section>
-    </div>
-  </div>
-</div>
 
-<!-- 外观设置弹窗 -->
-<div class="adm-mask" id="dlgSettings">
-  <div class="adm-modal">
-    <div class="adm-modal-head">外观设置</div>
-    <div class="adm-modal-body">
-      <div class="set-pick-row">
-        <div class="set-pick"><label>封面图</label><div class="set-box" id="pickCover"><img id="pickCoverImg" alt=""><span class="badge">更换</span></div></div>
-        <div class="set-pick"><label>头像</label><div class="set-box" id="pickAvatar"><img id="pickAvatarImg" alt=""><span class="badge">更换</span></div></div>
-      </div>
-      <div class="adm-field" style="margin-bottom:0"><label>昵称</label><input class="adm-input" id="setNickInput" type="text" maxlength="20" placeholder="显示在封面与前台昵称"></div>
+      <!-- 设置视图：签名 + 封面图 + 头像 + 昵称，一个表单、一个保存键 -->
+      <section class="adm-view" id="viewSettings" hidden>
+        <div class="adm-form">
+          <div class="set-pick-row">
+            <div class="set-pick"><label>封面图 <span class="hint">换图后需保存</span></label><div class="set-box" id="pickCover"><img id="pickCoverImg" alt=""><span class="badge">更换</span></div></div>
+            <div class="set-pick"><label>头像 <span class="hint">换图后需保存</span></label><div class="set-box" id="pickAvatar"><img id="pickAvatarImg" alt=""><span class="badge">更换</span></div></div>
+          </div>
+          <div class="adm-field">
+            <label>昵称</label>
+            <input class="adm-input" id="setNickInput" type="text" maxlength="20" placeholder="显示在封面与前台昵称">
+          </div>
+          <div class="adm-field">
+            <label>封面签名 <span class="hint">留空则不显示</span></label>
+            <input class="adm-input" id="signInput" type="text" maxlength="40" placeholder="显示在封面昵称下方">
+          </div>
+          <div class="adm-form-actions"><button class="adm-btn primary" id="btnSetSave">保存设置</button></div>
+        </div>
+      </section>
     </div>
-    <div class="adm-modal-foot"><button class="adm-btn" id="dlgSetCancel">取消</button><button class="adm-btn primary" id="dlgSetOk">保存</button></div>
-  </div>
-</div>
-
-<!-- 签名管理弹窗 -->
-<div class="adm-mask" id="dlgSign">
-  <div class="adm-modal">
-    <div class="adm-modal-head">签名管理</div>
-    <div class="adm-modal-body">
-      <div class="adm-field" style="margin-bottom:0">
-        <label>封面签名</label>
-        <input class="adm-input" id="signInput" type="text" maxlength="40" placeholder="显示在封面昵称下方，留空则不显示">
-      </div>
-    </div>
-    <div class="adm-modal-foot"><button class="adm-btn" id="dlgSignCancel">取消</button><button class="adm-btn primary" id="dlgSignOk">保存</button></div>
   </div>
 </div>
 
