@@ -101,7 +101,12 @@ input, textarea, select { font-family: inherit; }
 .p-grid { margin-top: 8px; display: grid; gap: 5px; grid-template-columns: repeat(3, 1fr); }
 .p-grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
 .p-grid img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; cursor: zoom-in; background: #F2F2F2; }
-.p-single img { max-width: 232px; max-height: 320px; width: auto; height: auto; display: block; cursor: zoom-in; margin-top: 8px; background: #F2F2F2; }
+/* 单图撑满内容容器。此前是 max-width:232px + max-height:320px，
+   既不满宽、竖图还会被高度上限缩成小块。库里图片实测最窄 914px，
+   大于容器最大宽度（PC 约 538px / 手机约 293px），因此不会被放大失真。
+   ⚠️ 不要再给这条加 max-height：width:100% 配 max-height 会把超高竖图直接压扁，
+   想限高只能改用 object-fit:contain 留白，但那样就谈不上"撑满"了。 */
+.p-single img { width: 100%; height: auto; display: block; cursor: zoom-in; margin-top: 8px; background: #F2F2F2; }
 
 .p-location { display: inline-flex; align-items: center; gap: 3px; color: var(--wx-blue); font-size: 12px; margin-top: 8px; cursor: default; }
 .p-location svg { width: 12px; height: 12px; fill: var(--wx-blue); }
