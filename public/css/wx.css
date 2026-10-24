@@ -116,7 +116,9 @@ input, textarea, select { font-family: inherit; }
 .p-foot { display: flex; align-items: center; margin-top: 6px; min-height: 26px; position: relative; }
 .p-time { color: var(--wx-gray); font-size: 12px; }
 .p-toggle {
-  margin-left: auto; background: var(--wx-box); border-radius: 4px;
+  /* 推到右侧的活交给 .like-row 的 margin-left:auto（auto 只会吃掉它左边的空隙，
+     留在谁身上就把谁推向一侧；之前留在这里导致点赞按钮被挤到最左） */
+  background: var(--wx-box); border-radius: 4px;
   width: 28px; height: 18px; display: flex; align-items: center; justify-content: center; gap: 3px;
   cursor: pointer; flex: none; transition: background .15s; position: relative;
 }
@@ -156,11 +158,12 @@ input, textarea, select { font-family: inherit; }
    底色注意：.p-foot 是白底（不是 .acts 的 #F7F7F7），但仍统一用主题蓝，对比度约 5.2:1 达 AA。 */
 .like-row {
   display: inline-flex; align-items: center; flex: none;
-  margin: 0 8px 0 0; padding: 2px 4px; min-height: 22px;
+  /* 左 auto 把时间留在最左、自己和 ··· 一起靠右；右 8px 即与 ··· 的间距 */
+  margin: 0 8px 0 auto; padding: 2px 4px; min-height: 22px;
   font: inherit; font-size: 13px; color: inherit; background: none; border: 0; border-radius: 4px;
   -webkit-appearance: none; appearance: none; cursor: pointer;
 }
-.like-row svg { width: 15px; height: 15px; margin-right: 5px; flex: none; fill: var(--wx-blue); stroke: none; }
+.like-row svg { width: 15px; height: 15px; margin-right: 2.5px; flex: none; fill: var(--wx-blue); stroke: none; }
 .like-row:not(.num) svg { fill: none; stroke: var(--wx-blue); stroke-width: 1.7; }
 .like-row.mine svg { fill: var(--wx-red); stroke: none; }
 .like-row:hover svg { fill: var(--wx-blue); stroke: none; }
