@@ -175,7 +175,7 @@ input, textarea, select { font-family: inherit; }
 .cmt .nm, .cmt .rn { color: var(--wx-blue); }
 .cmt-body { display: inline; } /* 行内盒：编辑/删除 才能紧跟正文同一行，不换行 */
 .cmt-more { display: inline; color: var(--wx-blue); font-style: normal; font-size: 13px; cursor: pointer; }
-.cmt-ops { margin-left: 12px; white-space: nowrap; }
+.cmt-ops { margin-left: 8px; white-space: nowrap; }
 .cmt-op { font-style: normal; font-size: 12px; color: var(--wx-blue); margin-left: 10px; cursor: pointer; }
 .cmt-op.danger { color: var(--wx-blue); }      /* 平时与普通操作一致 */
 .cmt-op.danger:hover { color: var(--wx-red); } /* 悬停才示警 */
