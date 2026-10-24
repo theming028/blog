@@ -46,7 +46,9 @@ function renderPost(p) {
   if (p.images.length === 1) {
     mediaHtml = `<div class="p-single"><img src="${imgUrl(p.images[0])}" data-pid="${p.id}" data-idx="0" loading="lazy" alt=""></div>`;
   } else if (p.images.length > 1) {
-    const cls = p.images.length === 4 ? 'p-grid cols-2' : 'p-grid';
+    // 2 张与 4 张走两列：三列布局下 2 张只占容器 2/3 宽，两列才与单图（.p-single 撑满）同宽
+    const twoUp = p.images.length === 2 || p.images.length === 4;
+    const cls = twoUp ? 'p-grid cols-2' : 'p-grid';
     mediaHtml = `<div class="${cls}">` + p.images.map((im, i) =>
       `<img src="${imgUrl(im)}" data-pid="${p.id}" data-idx="${i}" loading="lazy" alt="">`).join('') + '</div>';
   }
