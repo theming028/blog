@@ -151,9 +151,10 @@ input, textarea, select { font-family: inherit; }
   content: ""; position: absolute; top: -4px; right: 14px;
   width: 8px; height: 8px; background: var(--wx-box); transform: rotate(45deg); border-radius: 1px;
 }
-.like-row { display: flex; padding: 7px 10px; align-items: flex-start; }
-.like-row svg { width: 16px; height: 16px; fill: var(--wx-blue); margin-right: 7px; margin-top: 3px; flex: none; }
-.like-names { color: var(--wx-blue); line-height: 1.5; word-break: break-all; }
+.like-row { display: flex; padding: 7px 10px; align-items: center; }
+.like-row svg { width: 16px; height: 16px; fill: var(--wx-blue); margin-right: 6px; flex: none; }
+.like-row.mine svg { fill: var(--wx-red); } /* 我赞过的心标红，替代原来的昵称清单 */
+.like-count { color: var(--wx-blue); font-variant-numeric: tabular-nums; letter-spacing: .2px; }
 .acts-sep { height: .5px; background: #E5E5E5; margin: 0 10px; }
 .cmt-list { padding: 5px 10px 8px; }
 .cmt { line-height: 1.55; color: var(--wx-text); padding: 2px 0; cursor: pointer; word-break: break-word; }
@@ -327,6 +328,26 @@ input, textarea, select { font-family: inherit; }
 .blogroll-item:hover { text-decoration: underline; }
 .nm-link { text-decoration: none; }
 
+/* ============ 双击点赞特效（纯 CSS 粒子，无第三方库） ============ */
+.burst { position: fixed; left: 50%; top: 50%; width: 0; height: 0; z-index: 500; pointer-events: none; }
+.burst-h {
+  position: absolute; left: 0; top: 0; width: var(--sz); height: var(--sz);
+  margin: calc(var(--sz) / -2) 0 0 calc(var(--sz) / -2);
+  opacity: 0; animation: burstUp 900ms cubic-bezier(.18, .72, .3, 1) forwards;
+}
+.burst-h svg { width: 100%; height: 100%; fill: var(--wx-red); filter: drop-shadow(0 2px 6px rgba(250, 81, 81, .35)); }
+@keyframes burstUp {
+  0%   { opacity: 0; transform: translate(0, 0) scale(.25) rotate(0deg); }
+  14%  { opacity: 1; }
+  58%  { opacity: 1; transform: translate(var(--tx), var(--ty)) scale(1.12) rotate(var(--rot)); }
+  100% { opacity: 0; transform: translate(calc(var(--tx) * 1.12), var(--fall)) scale(.62) rotate(var(--rot)); }
+}
+/* 系统开了"减弱动态效果"就不放粒子，只保留计数变化 */
+@media (prefers-reduced-motion: reduce) { .burst { display: none; } }
+
+/* 双击落点限制在帖子内；manipulation 关掉浏览器自带的双击缩放，避免和我们的双击点赞打架 */
+.post { touch-action: manipulation; }
+
 /* ============ 移动端适配 ============ */
 
 /* 触控设备专属：输入框字号必须 ≥16px，否则 iOS 聚焦时会强制放大整页且不会自动还原；
@@ -354,7 +375,7 @@ input, textarea, select { font-family: inherit; }
      通用选择器 * 的优先级低于类选择器，光写 * { line-height } 覆盖不掉 .cmt{1.55}。
      刻意排除：.cbar-field textarea（行距是 px 且与静止高度公式 40=22+9×2 绑定，改了会让自动撑高跳变）、
      .emoji-cell（1.2 是表情网格字形单元格的尺寸依据）。 */
-  body, .p-name, .p-text, .like-names, .cmt, .dlg-msg,
+  body, .p-name, .p-text, .like-row, .cmt, .dlg-msg,
   .copyright, .blogroll-item { line-height: 1.45; }
   /* 评论者昵称在触屏下提到中粗，从灰底正文里区分出来 */
   .cmt .nm { font-weight: 500; }

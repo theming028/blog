@@ -113,6 +113,30 @@ function noteLoginFail(key) {
   }
 }
 
+/* 点赞改成可双击累加后，节流是唯一的刷量屏障（访客无需登录）。
+ * 两道闸：突发 1 秒内最多 3 次；累计 60 秒内最多 60 次。 */
+const LIKE_BURST_MS = 1000, LIKE_BURST_MAX = 3;
+const LIKE_MINUTE_MS = 60 * 1000, LIKE_MINUTE_MAX = 60;
+const likeHits = new Map(); // "ip|postId" -> [时间戳]
+
+function likeWait(key) {
+  const now = Date.now();
+  let arr = (likeHits.get(key) || []).filter((t) => now - t < LIKE_MINUTE_MS);
+  const minute = arr.length;
+  const burst = arr.filter((t) => now - t < LIKE_BURST_MS).length;
+  if (minute >= LIKE_MINUTE_MAX) {
+    likeHits.set(key, arr);
+    return Math.ceil((arr[0] + LIKE_MINUTE_MS - now) / 1000) || 1;
+  }
+  if (burst >= LIKE_BURST_MAX) { likeHits.set(key, arr); return 1; }
+  arr.push(now);
+  likeHits.set(key, arr);
+  if (likeHits.size > 2000) {
+    for (const [k, v] of likeHits) if (!v.some((t) => now - t < LIKE_MINUTE_MS)) likeHits.delete(k);
+  }
+  return 0;
+}
+
 const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const hashEq = (a, b) => {
   const ba = Buffer.from(a, 'hex'), bb = Buffer.from(b, 'hex');
@@ -367,14 +391,22 @@ async function handleApi(req, res, pathname, query) {
   m = pathname.match(/^\/api\/posts\/([\w-]+)\/like$/);
   if (m && method === 'POST') {
     const b = await readBody(req);
-    if (!b.clientKey) return sendError(res, 400, 'clientKey required');
-    await store.addLike(m[1], String(b.clientKey), String(b.name || '游客')); // 唯一索引幂等
+    const ck = String(b.clientKey || '');
+    if (!ck) return sendError(res, 400, 'clientKey required');
+    if (ck.length > 64) return sendError(res, 400, 'clientKey 过长');
+    const wait = likeWait(clientIp(req) + '|' + m[1]);
+    if (wait) {
+      res.writeHead(429, { 'Retry-After': String(wait), 'Content-Type': 'application/json; charset=utf-8', ...SECURITY_HEADERS });
+      return res.end(JSON.stringify({ error: '点赞太快了，稍候再试' }));
+    }
+    // 不再幂等去重：双击累加计数，所以每次调用都落一行（名字仍存，只是列表改显示总数）
+    await store.addLike(m[1], ck, String(b.name || '游客').slice(0, 20));
     return sendJson(res, 200, { liked: true, likes: await store.listLikes(m[1]) });
   }
   if (m && method === 'DELETE') {
     const clientKey = query.get('clientKey');
     if (!clientKey) return sendError(res, 400, 'clientKey required');
-    await store.removeLike(m[1], clientKey);
+    await store.removeLike(m[1], clientKey); // 清空"我"在这条下的全部赞
     return sendJson(res, 200, { liked: false, likes: await store.listLikes(m[1]) });
   }
 

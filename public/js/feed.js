@@ -13,7 +13,6 @@ const state = {
   activePid: null,    // 评论栏当前对应的朋友圈
   editingCid: null,   // 正在编辑的评论 id
   tmpActs: null,      // 为「无点赞无评论」的帖子临时创建的 acts 容器，收起时移除
-  cbarMode: 'comment', // comment=评论 / like=借同一表单补填昵称后点赞
   page: 1, pages: 1, total: 0,   // 分页
   settings: {}, // 默认值只在 server.js 一处维护，前端等 /api/settings 下发，避免多副本漂移
 };
@@ -60,8 +59,9 @@ function renderPost(p) {
   const hasCmts = p.comments.length > 0;
   let actsHtml = '';
   if (hasLikes || hasCmts) {
+    // 不再列昵称，改为"心形 + 总数"；我赞过时加 .mine 让心变实心（数据里仍存 name，只是不展示）
     const likeRow = hasLikes
-      ? `<div class="like-row">${ICON_LIKE_SM}<div class="like-names">${p.likes.map((l) => esc(l.name)).join('，')}</div></div>` : '';
+      ? `<div class="like-row${liked ? ' mine' : ''}">${ICON_LIKE_SM}<span class="like-count">${p.likes.length}</span></div>` : '';
     const sep = hasLikes && hasCmts ? '<div class="acts-sep"></div>' : '';
     const cmts = hasCmts
       ? `<div class="cmt-list">` + p.comments.map((c) => renderComment(c)).join('') + '</div>' : '';
@@ -160,21 +160,90 @@ async function handleLike(pid) {
   if (!p) return;
   const clientKey = getClientKey();
   const liked = p.likes.some((l) => l.client_key === clientKey);
-  if (!liked && !getNick()) {
-    // 首次点赞需要昵称：直接展开同一张表单补填，不再单独弹窗
-    openCbar(pid, null, null, 'like');
-    return;
-  }
   try {
     if (liked) {
+      // 「取消点赞」＝清空我在这一条下累计的全部赞（双击可累加，只撤一次会令人困惑）
       const r = await api(`/api/posts/${pid}/like?clientKey=${encodeURIComponent(clientKey)}`, { method: 'DELETE' });
       p.likes = r.likes;
     } else {
-      const r = await api(`/api/posts/${pid}/like`, { method: 'POST', body: { clientKey, name: getNick() } });
-      p.likes = r.likes;
+      await addLikeOnly(pid);
+      return;
     }
     refreshPost(pid);
   } catch (e) { alertDlg(e.message); }
+}
+
+/* 点赞不再要求填昵称：有昵称就带上，没有就记"游客"，绝不为点赞展开表单 */
+async function addLikeOnly(pid) {
+  const p = state.posts.find((x) => x.id === pid);
+  if (!p) return false;
+  try {
+    const r = await api(`/api/posts/${pid}/like`, {
+      method: 'POST', body: { clientKey: getClientKey(), name: getNick() || '游客' },
+    });
+    p.likes = r.likes;
+    refreshPost(pid);
+    return true;
+  } catch (e) { showToast(e.message); return false; } // 限流/离线只给轻提示，不打断
+}
+
+/* ---------- 双击点赞 + 爱心喷发 ---------- */
+const LIKE_EXCLUDE = 'a, button, input, textarea, .cbar, .p-toggle, .pop, .cmt, .cmt-more, .p-single img, .p-grid img, .blogroll-item, .viewer';
+const tapMemo = { pid: '', t: 0, x: 0, y: 0 };
+
+function likeAt(postEl) {
+  const pid = postEl.dataset.pid;
+  if (!pid) return;
+  heartBurst();
+  addLikeOnly(pid);
+}
+
+// 桌面/触屏笔电：dblclick
+document.addEventListener('dblclick', (e) => {
+  const post = e.target.closest && e.target.closest('.post');
+  if (!post || e.target.closest(LIKE_EXCLUDE)) return;
+  likeAt(post);
+});
+
+// 手机：自己判定双击，因为移动端 dblclick 会连带触发浏览器缩放且时机不稳
+document.addEventListener('touchend', (e) => {
+  if (e.touches.length > 0) { tapMemo.pid = ''; return; } // 多指手势（捏合等）不参与
+  const t = e.changedTouches[0];
+  const hit = document.elementFromPoint(t.clientX, t.clientY);
+  const post = hit && hit.closest ? hit.closest('.post') : null;
+  if (!post || hit.closest(LIKE_EXCLUDE)) { tapMemo.pid = ''; return; }
+  const now = Date.now();
+  const near = Math.abs(t.clientX - tapMemo.x) < 30 && Math.abs(t.clientY - tapMemo.y) < 30;
+  if (tapMemo.pid === post.dataset.pid && now - tapMemo.t < 320 && near) {
+    tapMemo.pid = '';
+    e.preventDefault(); // 吃掉浏览器自己的双击缩放
+    likeAt(post);
+  } else {
+    tapMemo.pid = post.dataset.pid; tapMemo.t = now; tapMemo.x = t.clientX; tapMemo.y = t.clientY;
+  }
+}, { passive: false });
+
+// 纯 CSS 粒子：向上扇形喷出爱心，落回并淡出；不引任何库
+function heartBurst() {
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const layer = document.createElement('div');
+  layer.className = 'burst';
+  for (let i = 0; i < 16; i++) {
+    const s = document.createElement('span');
+    s.className = 'burst-h';
+    const ang = (-90 + (Math.random() * 130 - 65)) * Math.PI / 180;  // 以正上为中心的扇形
+    const dist = 90 + Math.random() * 120;
+    s.style.setProperty('--tx', (Math.cos(ang) * dist).toFixed(1) + 'px');
+    s.style.setProperty('--ty', (Math.sin(ang) * dist).toFixed(1) + 'px');
+    s.style.setProperty('--fall', (Math.sin(ang) * dist + 120 + Math.random() * 80).toFixed(1) + 'px');
+    s.style.setProperty('--rot', (Math.random() * 80 - 40).toFixed(0) + 'deg');
+    s.style.setProperty('--sz', (16 + Math.random() * 18).toFixed(0) + 'px');
+    s.style.animationDelay = (Math.random() * 120).toFixed(0) + 'ms';
+    s.innerHTML = ICON_HEART;
+    layer.appendChild(s);
+  }
+  document.body.appendChild(layer);
+  setTimeout(() => layer.remove(), 1200); // 动画结束即摘除，不留幽灵节点
 }
 
 /* ---------- 评论栏：挂在对应朋友圈的 acts 容器内（支持 回复 / 编辑自己的评论） ---------- */
@@ -266,24 +335,18 @@ function autoGrowCbar() {
   el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden';
 }
 
-function openCbar(pid, replyTo, editTarget, mode) {
+function openCbar(pid, replyTo, editTarget) {
   // 切到另一条朋友圈前，先清掉上一条临时补的 acts，避免留下空灰盒
   if (state.tmpActs) { state.tmpActs.remove(); state.tmpActs = null; }
   if (!mountCbar(pid)) return; // 目标帖子不在当前页 DOM 中，放弃弹出
   state.activePid = pid;
   state.replyTo = replyTo || null;
   state.editingCid = editTarget ? editTarget.id : null;
-  state.cbarMode = mode || 'comment';
   const input = $('#cbarInput');
   const send = $('#cbarSend');
-  const isLike = state.cbarMode === 'like';
   $('#cName').value = getNick();
   $('#cSite').value = getSite();
-  if (isLike) {
-    input.placeholder = '（点赞无需填写内容）';
-    input.value = '';
-    send.textContent = '点赞';
-  } else if (editTarget) {
+  if (editTarget) {
     input.placeholder = '编辑评论';
     input.value = editTarget.content;
     send.textContent = '更新评论';
@@ -292,14 +355,13 @@ function openCbar(pid, replyTo, editTarget, mode) {
     input.value = '';
     send.textContent = '发送';
   }
-  send.classList.toggle('on', isLike || Boolean(editTarget) || input.value.trim().length > 0);
+  send.classList.toggle('on', Boolean(editTarget) || input.value.trim().length > 0);
   cbarErr('');
   hideEmoji();   // 气泡菜单里的「评论」会 stopPropagation 绕过外点兜底，这里保证换目标时面板必收
   $('#cbar').classList.add('show');
   autoGrowCbar();                    // 编辑模式下带出原文时要立刻撑到对应高度
-  // 老访客身份已回填，光标直接进内容框；首次使用才停在昵称框
-  const focusEl = !isLike || getNick() ? input : $('#cName');
   // focus 同步做：iOS 要求在用户手势的同一任务里，包进 setTimeout 可能导致键盘不弹
+  const focusEl = getNick() ? input : $('#cName'); // 老访客直接进内容框，首次使用先停在昵称框
   focusEl.focus({ preventScroll: true });
   focusEl.setSelectionRange(focusEl.value.length, focusEl.value.length);
   watchKeyboard();
@@ -322,7 +384,6 @@ function closeCbar() {
   state.replyTo = null;
   state.activePid = null;
   state.editingCid = null;
-  state.cbarMode = 'comment';
 }
 
 /* ---------- Emoji 选择插入 ---------- */
@@ -356,29 +417,10 @@ function insertEmoji(emoji) {
   $('#cbarSend').classList.toggle('on', input.value.trim().length > 0);
 }
 
-/* 发送按钮与回车统一入口：点赞模式下走 submitLike，其余走 sendComment */
-function onSend() {
-  if (state.cbarMode === 'like') return submitLike();
-  return sendComment();
-}
+// 表单只有一个提交目标：评论（点赞已不走表单）
+const onSend = sendComment;
 
 /* 借同一张表单补填昵称后完成点赞 */
-async function submitLike() {
-  const pid = state.activePid;
-  if (!pid) return;
-  const id = readIdentity();
-  if (!id.name) { cbarErr('请先填写昵称'); $('#cName').focus(); return; }
-  saveIdentity(id);
-  try {
-    const r = await api(`/api/posts/${pid}/like`, {
-      method: 'POST', body: { clientKey: getClientKey(), name: id.name },
-    });
-    const p = state.posts.find((x) => x.id === pid);
-    if (p) p.likes = r.likes;
-    closeCbar();
-    refreshPost(pid);
-  } catch (e) { cbarErr(e.message); }
-}
 
 async function sendComment() {
   const input = $('#cbarInput');
