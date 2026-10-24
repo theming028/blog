@@ -176,6 +176,10 @@ input, textarea, select { font-family: inherit; }
 }
 .cbar.show { display: block; }
 .cbar input, .cbar textarea { font-size: 13px; outline: none; }
+/* placeholder 颜色：此前两份 CSS 都没有 ::placeholder 规则，走的是浏览器默认灰
+   （Chrome 约 #757575，白底上约 4.6:1），确实偏深。opacity:1 是给 Firefox 的——
+   它对 placeholder 默认再叠约 .54 透明度，不写死会把设定色又冲淡一层。 */
+.cbar input::placeholder, .cbar textarea::placeholder { color: #B2B2B2; opacity: 1; }
 .cbar-id { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 .cbar-id input {
   flex: 1 1 110px; min-width: 0; height: 32px; padding: 0 10px;
