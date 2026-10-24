@@ -10,6 +10,9 @@ data/images/
 # 改动前的手工快照（放在项目外，这里只是双保险）
 .backup-*/
 
+# 一次性运维脚本（已作为文件卡交付给用户，保留在项目里但不入库）
+tools-pull-live-data.js
+
 # 依赖与日志（本项目零依赖，正常不会出现）
 node_modules/
 *.log

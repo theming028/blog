@@ -317,6 +317,10 @@ input, textarea, select { font-family: inherit; }
 /* 触控设备专属：输入框字号必须 ≥16px，否则 iOS 聚焦时会强制放大整页且不会自动还原；
    同时把偏小的点按目标撑开。用 hover/pointer 判定而非屏宽，平板/触屏笔电行为一致。 */
 @media (hover: none) and (pointer: coarse) {
+  /* 移动端整条顶部导航不显示；同时收回为它预留的 46px 顶部间距，
+     否则封面下方会留下一白条。副作用见交付说明：移动端后台的"发布"入口随导航一起消失。 */
+  .nav { display: none; }
+  .feed { padding-top: 0; }
   .cbar input, .cbar textarea { font-size: 16px; }
   .cbar-id input { height: 40px; }
   .cbar-field textarea { height: 40px; max-height: 132px; line-height: 22px; padding: 9px 0; }
