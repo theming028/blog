@@ -15,7 +15,7 @@
  * 性能护栏（这台机器是 Pentium 双核，最坏样本）：
  *  数量按视口面积给并封顶；backing store 的像素预算钉在实测悬崖以下（见 pickDpr）；
  *  页面隐藏撤掉整条 rAF；系统"减弱动态效果"下不启动；
- *  刻意不做"按帧率自动降级"的闭环：实测那种控制器会拿错信号静默把雪砍到三分之一；
+ *  唯一的运行时自适应是"整屏铺不动就降到 30Hz 绘制"这一档，不降分辨率也不减粒子；
  *  两层画布都 pointer-events:none，一律不吃点击。 */
 (function () {
   'use strict';
@@ -57,6 +57,9 @@
   let flakes = [], target = 0, cap = 0, prewarm = true;
   let raf = 0, lastTs = 0, wind = BREEZE_BASE, landed = 0, landRate = 0;
   let frameMs = 12, settleTick = 0, pileDirty = 0, pileDrawn = -1;
+  /* emaDt：帧间隔的滑动平均（不是中位数——掉帧是双峰的，中位数会骗人）。
+     halfRate 只有一档：true 表示隔帧不画，即 30Hz。 */
+  let emaDt = 16.7, slowRun = 0, fastRun = 0, halfRate = false, lastDraw = 0, lastFlip = 0, tries = 0;
   let enabled = false, resizeTimer = 0;
 
   function pickDpr() {
@@ -305,6 +308,10 @@
   function step() {
     raf = requestAnimationFrame(step);
     const t0 = now();
+    // 30Hz 模式下隔帧直接返回：注意 lastTs 不能在这里更新，
+    // 否则下一帧拿到的 dt 少算一半，雪会掉速一半。
+    if (halfRate && t0 - lastDraw < 31) return;
+    lastDraw = t0;
     const raw = t0 - lastTs;
     lastTs = t0;
     let dt = raw / 1000;
@@ -359,7 +366,18 @@
 
     const ms = now() - t0;
     frameMs = frameMs * 0.9 + ms * 0.1;      // step 自身耗时，仅作诊断
-    void raw;                                // 帧间隔仍要算，dt 用于位移积分；不再参与任何降级决策
+    /* 判据：真实帧间隔。>21ms 说明整屏图层每帧铺不出来；<15ms 说明有余量。
+       两个方向都要连续够久才动作，且只允许动 halfRate 这一个开关。 */
+    emaDt = emaDt * 0.9 + (raw > 0 && raw < 250 ? raw : 16.7) * 0.1;
+    /* 阈值跟着当前档位走：60Hz 档下 >21ms 才算铺不动、<15ms 才算有余量；
+       30Hz 档下期望值本来就是≈33ms，得用 <40ms 判"跟得上"，否则永远回不去。 */
+    slowRun = emaDt > (halfRate ? 45 : 21) ? slowRun + 1 : 0;
+    fastRun = emaDt < (halfRate ? 40 : 15) ? fastRun + 1 : 0;
+    if (!halfRate && slowRun > 60 && t0 - lastFlip > 2000) {
+      halfRate = true; lastFlip = t0; slowRun = 0;      // 试探后又不行 → 计数已在升档时加过
+    } else if (halfRate && tries < 2 && fastRun > 240 && t0 - lastFlip > 8000) {
+      halfRate = false; tries++; lastFlip = t0; fastRun = 0;   // 最多回试两次，避免来回抖
+    }
   }
 
   function measureCap() {
@@ -373,6 +391,7 @@
     if (!sky || raf) return;
     sizeCanvas(); initGround(); bakeAll();
     cap = measureCap(); target = 0; prewarm = true;
+    emaDt = 16.7; slowRun = 0; fastRun = 0; halfRate = false; tries = 0; lastDraw = 0; lastFlip = now();
     settleTick = 0; landed = 0;
     lastTs = now();
     raf = requestAnimationFrame(step);
@@ -428,7 +447,8 @@
     // 只读快照，给排障与探针用，不参与渲染路径
     stats: () => ({
       on: enabled, flakes: flakes.length, cap, target,
-      dpr: +dpr.toFixed(2), frameMs: +frameMs.toFixed(2), cols, landed,
+      dpr: +dpr.toFixed(2), frameMs: +frameMs.toFixed(2), emaDt: +emaDt.toFixed(1), halfRate,
+      cols, landed,
       crystals: flakes.reduce((a, f) => a + (f.crystal ? 1 : 0), 0),
       pileMax: ground ? Math.round(Math.max.apply(null, ground)) : 0,
       wind: Math.round(wind),
