@@ -206,6 +206,11 @@ input, textarea, select { font-family: inherit; }
 /* ============ 评论表单：昵称 + 个人主页 + 评论内容同框（挂在对应朋友圈的 acts 内） ============ */
 .cbar {
   display: none; position: relative;
+  /* z-index 是必需的：.cbar 在 .acts 里（两者都是 position:relative + z-index:auto，
+     不另建堆叠上下文），而飘雪的两张画布是 fixed + z-index 5/6 参与根堆叠——
+     不给这个 7，落下的雪粒就会糊在评论输入框上（pointer-events:none 只保证点得中，
+     不保证看不见）。7 仍然低于 toast 260 / viewer 300 / mask 400 / burst 500。 */
+  z-index: 7;
   padding: 9px 10px;
   border-top: .5px solid #E5E5E5;
 }
@@ -380,9 +385,11 @@ input, textarea, select { font-family: inherit; }
 /* ============ 飘雪（两张画布由 js/snow.js 创建，开关在后台「设置」） ============ */
 /* 固定全屏 + pointer-events: none：雪压在内容之上，但一律不吃点击——
    "看不见 ≠ 不挡"这条账在这份文件里已经记过一次了。
-   z-index 5 / 6 是算出来的：高于 .phone 里全部内容（0–3），低于气泡 30 / 导航 100 /
-   表情面板 140 / 评论条 260 / 大图查看器 400 / 弹窗 500，
-   所以看大图、写评论、任何对话框打开时都不会有雪糊在操作面上。
+   堆叠顺序（这次逐个核对过归属——上一版把 .toast 的 260 误记成评论条，于是
+   "写评论时不会有雪糊在操作面上"是句空话：.cbar 当时根本没有 z-index，确实被雪盖住了，
+   现已给它补 z-index:7 兑现）：
+     .phone 内容 0–3  <  #snow 5  <  #snow-ground 6  <  .cbar 7  <  .pop 30
+     <  .nav 100  <  表情面板 140  <  .toast 260  <  .viewer 300  <  .mask 400  <  .burst 500
    积雪层（#snow-ground）压在飘雪层之上：雪粒落到雪堆后面，才对得上遮挡关系。 */
 #snow { position: fixed; inset: 0; z-index: 5; pointer-events: none; display: block; }
 #snow-ground { position: fixed; inset: 0; z-index: 6; pointer-events: none; display: block; }
