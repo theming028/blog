@@ -110,6 +110,15 @@ input, textarea, select { font-family: inherit; }
    想限高只能改用 object-fit:contain 留白，但那样就谈不上"撑满"了。 */
 .p-single img { width: 100%; height: auto; display: block; cursor: zoom-in; margin-top: 8px; background: #F2F2F2; }
 
+/* 音视频：宽度与图片一致（撑满内容容器），不外套卡片、不加描边。
+   视频给 16:10 的兜底高度：preload="none" 时元素在拿到元数据前高度是 0，
+   不兜底的话整条帖子会在"点播放 → 开始加载"的瞬间往下跳一截（移动端最明显）。
+   有 poster 时由 poster 撑，object-fit: contain 保证不裁画面。 */
+.p-media-el { display: block; width: 100%; margin-top: 8px; border-radius: 4px; background: #16181A; }
+video.p-media-el { min-height: 190px; object-fit: contain; }
+.p-audio { margin-top: 8px; }
+.p-audio .p-media-el { min-height: 40px; background: #F7F7F7; }
+
 .p-location { display: inline-flex; align-items: center; gap: 3px; color: var(--wx-blue); font-size: 12px; margin-top: 8px; cursor: default; }
 .p-location svg { width: 12px; height: 12px; fill: var(--wx-blue); }
 

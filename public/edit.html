@@ -23,12 +23,12 @@
       <a class="adm-nav-item" href="/admin#links">
         <svg viewBox="0 0 24 24"><path d="M10.6 13.4a1 1 0 0 1 0-1.4l1.4-1.4a1 1 0 0 1 1.4 1.4L12 13.4a1 1 0 0 1-1.4 0zM8.5 15.5 7 17a3 3 0 0 0 4.2 4.2l1.5-1.5m2.8-8.2L19 7a3 3 0 1 0-4.2-4.2l-1.5 1.5"/></svg>网上邻居
       </a>
-      <div class="adm-nav-label">设置</div>
-      <a class="adm-nav-item" href="/admin#sign">
-        <svg viewBox="0 0 24 24"><path d="M3 17.2V21h3.8L17.9 9.9l-3.8-3.8zM20.7 7.1a1 1 0 0 0 0-1.4l-2.4-2.4a1 1 0 0 0-1.4 0l-1.8 1.8 3.8 3.8z"/></svg>签名管理
-      </a>
+      <div class="adm-nav-label">站点</div>
+      <!-- 上一轮把「签名管理 + 外观设置」合并成了一个「设置」视图，
+           这里的侧栏当时漏改了，仍写着两项旧名字（链接靠 #sign/#settings 别名还能跳对，
+           但文案与后台已经不一致） -->
       <a class="adm-nav-item" href="/admin#settings">
-        <svg viewBox="0 0 24 24"><path d="M12 2 3 7v10l9 5 9-5V7zm0 2.3 6.5 3.6L12 13 5.5 9.5zM5 11.2l6 3.3v5.6l-6-3.3zm14 0v5.6l-6 3.3v-5.6z"/></svg>外观设置
+        <svg viewBox="0 0 24 24"><path d="M12 2 3 7v10l9 5 9-5V7zm0 2.3 6.5 3.6L12 13 5.5 9.5zM5 11.2l6 3.3v5.6l-6-3.3zm14 0v5.6l-6 3.3v-5.6z"/></svg>设置
       </a>
     </nav>
     <div class="adm-side-foot">
@@ -61,10 +61,20 @@
           <label>所在位置 <span class="hint">选填</span></label>
           <input class="adm-input" id="eLoc" type="text" placeholder="如：敦煌 · 鸣沙山月牙泉" maxlength="60">
         </div>
-        <div class="adm-field" style="margin-bottom:8px">
+        <div class="adm-field">
           <label>图片 <span class="hint">最多 9 张，自动压缩上传</span></label>
           <div class="adm-photos" id="ePhotos"></div>
           <div class="adm-up" id="eUp"></div>
+        </div>
+        <div class="adm-field" style="margin-bottom:8px">
+          <label>音视频 <span class="hint">最多 3 段，填外链地址——本站不托管媒体文件</span></label>
+          <div id="eMedia"></div>
+          <div class="adm-media-add">
+            <button class="adm-btn" id="btnAddVideo" type="button">+ 视频</button>
+            <button class="adm-btn" id="btnAddAudio" type="button">+ 音频</button>
+          </div>
+          <div class="adm-note">地址需是浏览器能直接取到的 mp4 / webm / mp3 / m4a 等直链，拖动进度条要求源站支持 Range。
+            勾了「自动播放」我们会自动静音（muted）并等它滚进视口才起播——带声音的自动播放 Chrome 与 iOS Safari 一律拦截。</div>
         </div>
       </div>
     </div>

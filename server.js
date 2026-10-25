@@ -51,6 +51,33 @@ function safeHttpUrl(raw) {
   return u.href;
 }
 
+/* 音视频：只存「外链描述」，本站不托管媒体文件。两条硬理由：
+ *  1) 发布包 = 项目目录全部内容，而 db.json 已有 4MB 纯图片 base64；几十 MB 的视频
+ *     一旦进库，每次发布都要整个重传。
+ *  2) base64 内联的接口给不出 HTTP Range，iOS Safari 对不能 seek 的视频源直接拒绝播放。
+ * 所以这里只收 URL + 类型 + 是否自动播放，播放与拖动进度条由源站负责。
+ * 非法条目（类型不认识、URL 不是 http(s)）静默丢弃而不是整条报错：
+ * 用户贴错一个链接不该让他刚写的正文发不出去。 */
+const MEDIA_KINDS = ['video', 'audio'];
+const MEDIA_MAX = 3;
+function sanitizeMedia(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const it of raw) {
+    if (!it || typeof it !== 'object') continue;
+    const kind = MEDIA_KINDS.indexOf(String(it.kind)) >= 0 ? String(it.kind) : null;
+    const url = safeHttpUrl(it.url);
+    if (!kind || !url) continue;
+    const m = { kind, url, autoplay: it.autoplay === true || it.autoplay === 'true' };
+    // 封面只对视频有意义；音频给个 poster 也无处显示，省得一团糊
+    const poster = kind === 'video' ? safeHttpUrl(it.poster) : null;
+    if (poster) m.poster = poster;
+    out.push(m);
+    if (out.length >= MEDIA_MAX) break;
+  }
+  return out;
+}
+
 const PORT = Number(process.env.PORT || 8081);
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
@@ -384,12 +411,14 @@ async function handleApi(req, res, pathname, query) {
 
   if (pathname === '/api/posts' && method === 'POST') {
     const b = await readBody(req);
-    if (!b.content && !(b.images || []).length) return sendError(res, 400, '内容和图片不能同时为空');
+    const media = sanitizeMedia(b.media);
+    if (!b.content && !(b.images || []).length && !media.length) return sendError(res, 400, '内容、图片、音视频不能同时为空');
     if (String(b.content || '').length > POST_MAX) return sendError(res, 400, `正文不能超过 ${POST_MAX} 字`);
     const post = await store.createPost({
       content: String(b.content || ''),
       location: b.location ? String(b.location) : null,
       images: Array.isArray(b.images) ? b.images.slice(0, 9) : [],
+      media,
       status: b.status === 'draft' ? 'draft' : 'published',
     });
     return sendJson(res, 200, { post });
@@ -413,6 +442,8 @@ async function handleApi(req, res, pathname, query) {
     }
     if (b.location !== undefined) patch.location = b.location ? String(b.location) : null;
     if (b.images !== undefined) patch.images = Array.isArray(b.images) ? b.images.slice(0, 9) : [];
+    // 与创建走同一个清洗：否则"编辑时贴个 javascript: 链接"就能绕过发布时的校验
+    if (b.media !== undefined) patch.media = sanitizeMedia(b.media);
     if (b.status !== undefined) patch.status = b.status === 'draft' ? 'draft' : 'published';
     const post = await store.updatePost(m[1], patch);
     if (!post) return sendError(res, 404, 'post not found');

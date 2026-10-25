@@ -1,4 +1,4 @@
-/* 发布/编辑页：文本、位置、图片上传（前端压缩）、发表/草稿/删除 */
+/* 发布/编辑页：文本、位置、图片上传（前端压缩）、音视频外链、发表/草稿/删除 */
 'use strict';
 
 const params = new URLSearchParams(location.search);
@@ -62,6 +62,96 @@ $('#fileInput').addEventListener('change', async (e) => {
   }
 });
 
+/* ---------- 音视频（外链，本站不托管媒体文件） ---------- */
+const MEDIA_MAX = 3;
+let media = [];       // { kind, url, poster, autoplay }
+
+/* 与 server.js 的 safeHttpUrl 同一套判断。刻意在前端也做一遍：
+   服务端对非法条目是"静默丢弃"（不该让一个贴错的链接挡住整条发布），
+   但对正在编辑的人来说，"我明明加了一段视频保存后没了"更难理解，
+   所以这里把问题在提交前就指名道姓地报出来。 */
+function urlOk(raw) {
+  const v = String(raw == null ? '' : raw).trim();
+  if (!v || /\s/.test(v)) return false;
+  let u;
+  try { u = new URL(/^https?:\/\//i.test(v) ? v : 'https://' + v); } catch (e) { return false; }
+  return (u.protocol === 'http:' || u.protocol === 'https:') && /\./.test(u.hostname);
+}
+
+function renderMedia() {
+  const box = $('#eMedia');
+  box.innerHTML = media.map((m, i) => `
+    <div class="adm-media-item" data-i="${i}">
+      <div class="adm-media-head"><span>${m.kind === 'video' ? '视频' : '音频'} ${i + 1}</span>
+        <span class="adm-act danger" data-op="del">移除</span></div>
+      <div class="adm-field">
+        <label>地址 <span class="hint">${m.kind === 'video' ? 'https://…/a.mp4' : 'https://…/a.mp3'}</span></label>
+        <input class="adm-input" data-k="url" type="text" value="${esc(m.url || '')}" placeholder="https://">
+      </div>
+      ${m.kind === 'video' ? `<div class="adm-field">
+        <label>封面图 <span class="hint">选填；不填时视频区域是黑的</span></label>
+        <input class="adm-input" data-k="poster" type="text" value="${esc(m.poster || '')}" placeholder="https://…/cover.jpg">
+      </div>` : ''}
+      <div class="adm-field">
+        <label class="adm-media-auto"><input type="checkbox" data-k="autoplay" ${m.autoplay ? 'checked' : ''}> 自动播放</label>
+      </div>
+    </div>`).join('');
+  const full = media.length >= MEDIA_MAX;
+  $('#btnAddVideo').disabled = full;
+  $('#btnAddAudio').disabled = full;
+  $('#btnAddVideo').title = $('#btnAddAudio').title = full ? `最多 ${MEDIA_MAX} 段` : '';
+}
+
+function addMedia(kind) {
+  if (media.length >= MEDIA_MAX) { alertDlg(`最多 ${MEDIA_MAX} 段音视频`); return; }
+  media.push({ kind, url: '', poster: '', autoplay: false });
+  renderMedia();
+  // 新加的一行直接聚焦地址框，省一次点击
+  const rows = $$('#eMedia .adm-media-item');
+  const last = rows[rows.length - 1];
+  if (last) last.querySelector('[data-k="url"]').focus();
+}
+$('#btnAddVideo').addEventListener('click', () => addMedia('video'));
+$('#btnAddAudio').addEventListener('click', () => addMedia('audio'));
+
+$('#eMedia').addEventListener('input', (e) => {
+  const item = e.target.closest('.adm-media-item'); if (!item) return;
+  const k = e.target.dataset.k; if (!k) return;
+  const m = media[Number(item.dataset.i)]; if (!m) return;
+  if (k === 'autoplay') return;                 // 复选框走 change，不在 input 里读
+  m[k] = e.target.value;
+});
+$('#eMedia').addEventListener('change', (e) => {
+  const item = e.target.closest('.adm-media-item'); if (!item) return;
+  const k = e.target.dataset.k;
+  const m = media[Number(item.dataset.i)]; if (!m || k !== 'autoplay') return;
+  m.autoplay = e.target.checked;
+});
+$('#eMedia').addEventListener('click', (e) => {
+  const op = e.target.closest('.adm-act'); if (!op || op.dataset.op !== 'del') return;
+  const item = e.target.closest('.adm-media-item');
+  media.splice(Number(item.dataset.i), 1);
+  renderMedia();
+});
+
+/* 提交前清洗 + 校验；返回 null 表示有错且已提示 */
+function mediaToSave() {
+  const out = [];
+  for (let i = 0; i < media.length; i++) {
+    const m = media[i];
+    const url = String(m.url || '').trim();
+    if (!url) { alertDlg(`第 ${i + 1} 段${m.kind === 'video' ? '视频' : '音频'}还没填地址，或先移除它`); return null; }
+    if (!urlOk(url)) { alertDlg(`第 ${i + 1} 段的地址不是合法的 http(s) 直链`); return null; }
+    if (m.kind === 'video' && String(m.poster || '').trim() && !urlOk(m.poster)) {
+      alertDlg(`第 ${i + 1} 段视频的封面地址不是合法的 http(s) 链接`); return null;
+    }
+    const one = { kind: m.kind, url, autoplay: !!m.autoplay };
+    if (m.kind === 'video' && String(m.poster || '').trim()) one.poster = String(m.poster).trim();
+    out.push(one);
+  }
+  return out;
+}
+
 /* ---------- 保存 ---------- */
 function collect() {
   return {
@@ -74,8 +164,11 @@ function collect() {
 async function save(status) {
   if (saving) return;
   const b = collect();
-  if (!b.content && !b.images.length) {
-    alertDlg('写点内容，或至少选一张照片吧');
+  const m = mediaToSave();
+  if (m === null) return;
+  b.media = m;
+  if (!b.content && !b.images.length && !b.media.length) {
+    alertDlg('写点内容，或至少选一张照片、一段音视频吧');
     return;
   }
   saving = true;
@@ -108,6 +201,7 @@ $('#btnDelete').addEventListener('click', async () => {
 (async () => {
   if (!editId) {
     renderPhotos();
+    renderMedia();
     return;
   }
   $('#navTitle').textContent = '编辑内容';
@@ -119,7 +213,13 @@ $('#btnDelete').addEventListener('click', async () => {
     $('#eText').value = r.post.content || '';
     $('#eLoc').value = r.post.location || '';
     images = [...(r.post.images || [])];
+    // 老数据没有 media 字段（音视频是后加的），缺字段当空数组处理，不能让编辑页白屏
+    media = (Array.isArray(r.post.media) ? r.post.media : []).map((m) => ({
+      kind: m && m.kind === 'audio' ? 'audio' : 'video',
+      url: (m && m.url) || '', poster: (m && m.poster) || '', autoplay: !!(m && m.autoplay),
+    }));
     renderPhotos();
+    renderMedia();
     autoGrow();
   } catch (e) {
     alertDlg('内容不存在或已删除');

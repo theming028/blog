@@ -26,6 +26,41 @@ const ICON_IMG = '<svg viewBox="0 0 24 24"><path d="M21 3H3a1 1 0 0 0-1 1v16a1 1
 
 const imgUrl = (id) => `/api/images/${encodeURIComponent(id)}`;
 
+/* ---------- 音视频播放控制 ----------
+   三条规则，都是为了"不占资源、不吵"：
+   1) 同一时刻只允许一个在播。play 事件不冒泡，所以监听必须走捕获阶段；
+      不做这条，自动播放的那条滚过去之后还在出声，用户找不到是谁在响。
+   2) 滚出视口就暂停。IntersectionObserver 的回调只在跨越阈值时触发，
+      比 scroll 监听 + getBoundingClientRect 便宜得多，也不会引起重排。
+   3) data-autoplay 的元素"首次进入视口"才 play()，且只自动起播一次
+      （用户手动暂停后不该被我们重新点着）。
+   没有 IntersectionObserver 的老内核退化为"不自动播、其余照常手动播"，不影响手动播放。 */
+const mediaIO = 'IntersectionObserver' in window
+  ? new IntersectionObserver((entries) => {
+      for (const en of entries) {
+        const el = en.target;
+        if (en.isIntersecting) {
+          if (el.dataset.autoplay === '1' && el.dataset.autoDone !== '1') {
+            el.dataset.autoDone = '1';
+            const pr = el.play();
+            if (pr && pr.catch) pr.catch(() => {});   // 被策略拦掉时静默，不能打断整页
+          }
+        } else if (!el.paused) el.pause();
+      }
+    }, { rootMargin: '0px' })
+  : null;
+
+function observeMedia() {
+  if (!mediaIO) return;
+  $$('.p-media-el').forEach((el) => mediaIO.observe(el));
+}
+
+document.addEventListener('play', (e) => {
+  const el = e.target;
+  if (!el.classList || !el.classList.contains('p-media-el')) return;
+  $$('.p-media-el').forEach((other) => { if (other !== el && !other.paused) other.pause(); });
+}, true);
+
 /* ---------- 渲染 ---------- */
 function renderFeed() {
   const feed = $('#feed');
@@ -34,6 +69,7 @@ function renderFeed() {
     return;
   }
   feed.innerHTML = state.posts.map(renderPost).join('');
+  observeMedia();
 }
 
 function renderPost(p) {
@@ -42,19 +78,40 @@ function renderPost(p) {
   // 头像未就绪时不写 src：src="" 会让浏览器再去请求当前页面 URL
   const avAttr = state.settings.avatar ? ` src="${esc(state.settings.avatar)}"` : '';
 
-  let mediaHtml = '';
+  let imgHtml = '';
   if (p.images.length === 1) {
-    mediaHtml = `<div class="p-single"><img src="${imgUrl(p.images[0])}" data-pid="${p.id}" data-idx="0" loading="lazy" alt=""></div>`;
+    imgHtml = `<div class="p-single"><img src="${imgUrl(p.images[0])}" data-pid="${p.id}" data-idx="0" loading="lazy" alt=""></div>`;
   } else if (p.images.length > 1) {
     // 2 张与 4 张走两列：三列布局下 2 张只占容器 2/3 宽，两列才与单图（.p-single 撑满）同宽
     const twoUp = p.images.length === 2 || p.images.length === 4;
     const cls = twoUp ? 'p-grid cols-2' : 'p-grid';
-    mediaHtml = `<div class="${cls}">` + p.images.map((im, i) =>
+    imgHtml = `<div class="${cls}">` + p.images.map((im, i) =>
       `<img src="${imgUrl(im)}" data-pid="${p.id}" data-idx="${i}" loading="lazy" alt="">`).join('') + '</div>';
   }
 
   const locHtml = p.location
     ? `<div class="p-location">${ICON_PIN}${esc(p.location)}</div>` : '';
+
+  /* 音视频：只播外链（本站不托管媒体文件），一条内容最多 3 段，排在图片之后。
+     - video 用 preload="none"：列表里刷过去时一个字节都不下，点开才取流；
+     - audio 用 preload="metadata"：它没有画面，进度条与时长要靠文件头才画得出来，
+       这只请求头部几 KB，不是整段；
+     - playsinline 是 iOS 必需，少了它一点播放就全屏接管；
+     - 自动播放刻意【不】写 autoplay 属性，改成 data-autoplay 交给下面的控制器：
+       属性版会在页面加载瞬间就把屏幕外的播放器一起点着（用户只听见声音不知道哪来的），
+       而且"先播再被 IntersectionObserver 暂停"是有竞态的。改成"进入视口才 play()"，
+       行为确定，也顺带满足浏览器策略——带声音的自动播放 Chrome/Safari 一律拦，
+       所以自动播放必须配 muted，编辑页里也照这句写。 */
+  const mediaHtml = (p.media || []).map((m) => {
+    if (!m || (m.kind !== 'video' && m.kind !== 'audio')) return '';
+    if (!/^https?:\/\//i.test(m.url || '')) return '';
+    const auto = m.autoplay ? ' data-autoplay="1" muted' : '';
+    if (m.kind === 'audio') {
+      return `<div class="p-audio"><audio class="p-media-el" controls preload="metadata"${auto} src="${esc(m.url)}">当前浏览器不支持音频播放。</audio></div>`;
+    }
+    const poster = m.poster ? ` poster="${esc(m.poster)}"` : '';
+    return `<video class="p-media-el" controls playsinline webkit-playsinline${poster} preload="none"${auto} src="${esc(m.url)}">当前浏览器不支持视频播放。</video>`;
+  }).join('');
 
   const hasLikes = p.likes.length > 0;
   const hasCmts = p.comments.length > 0;
@@ -79,6 +136,7 @@ function renderPost(p) {
     <div class="p-body">
       <span class="p-name">${esc(state.settings.nickname)}</span>
       ${p.content ? `<div class="p-text">${esc(p.content)}</div>` : ''}
+      ${imgHtml}
       ${mediaHtml}
       ${locHtml}
       <div class="p-foot">
@@ -130,6 +188,7 @@ function refreshPost(pid) {
   const wrap = document.createElement('div');
   wrap.innerHTML = renderPost(p);
   old.replaceWith(wrap.firstElementChild);
+  observeMedia();   // 重建过的那条里有新节点，得重新登记给 IntersectionObserver
   if (reopen && mountCbar(pid)) bar.classList.add('show');
 }
 
@@ -194,7 +253,9 @@ async function addLikeOnly(pid) {
 }
 
 /* ---------- 双击点赞 + 爱心喷发 ---------- */
-const LIKE_EXCLUDE = 'a, button, input, textarea, .like-row, .cbar, .p-toggle, .pop, .cmt, .cmt-more, .p-single img, .p-grid img, .blogroll-item, .viewer';
+/* video/audio 必须排除：一是原生双击会切全屏，我们的双击点赞会跟它抢；
+   二是在播放器上"点赞"这个意图本来也不成立。 */
+const LIKE_EXCLUDE = 'a, button, input, textarea, .like-row, .cbar, .p-toggle, .pop, .cmt, .cmt-more, .p-single img, .p-grid img, .blogroll-item, .viewer, video, audio';
 const tapMemo = { pid: '', t: 0, x: 0, y: 0 };
 
 async function likeAt(postEl, origin) {

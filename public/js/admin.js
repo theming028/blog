@@ -89,10 +89,15 @@ function renderTable() {
   tb.innerHTML = posts.map((p) => {
     const pub = p.status === 'published';
     const thumb = p.images.length ? `<img class="adm-thumb" src="/api/images/${encodeURIComponent(p.images[0])}" alt="">` : `<div class="adm-thumb-ph">${ICON_IMG}</div>`;
-    const text = p.content || (p.images.length ? `[图片] × ${p.images.length}` : '（空内容）');
+    const media = p.media || [];
+    const text = p.content || (p.images.length ? `[图片] × ${p.images.length}` : media.length ? `[音视频] × ${media.length}` : '（空内容）');
+    // 音视频只列类型与是否自动播放：地址是外链，一眼能看出哪条依赖别人的服务器
+    const mediaTag = media.length
+      ? `<div class="loc">${media.map((m) => `${m.kind === 'audio' ? '🎵 音频' : '🎬 视频'}${m.autoplay ? '·自动播放' : ''}`).join(' ')}</div>`
+      : '';
     const loc = p.location ? `<div class="loc">📍 ${esc(p.location)}</div>` : '';
     return `<tr data-pid="${p.id}">
-      <td class="c-content"><div class="txt${p.content ? '' : ' empty'}">${esc(text)}</div>${loc}</td>
+      <td class="c-content"><div class="txt${p.content ? '' : ' empty'}">${esc(text)}</div>${mediaTag}${loc}</td>
       <td class="hide-sm">${thumb}</td>
       <td class="c-time hide-sm">${fmtTime(p.created_at)}</td>
       <td><span class="adm-badge ${pub ? 'pub' : 'draft'}">${pub ? '已发布' : '草稿'}</span></td>

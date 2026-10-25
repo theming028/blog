@@ -156,6 +156,17 @@ svg { display: block; }
 .adm-switch { cursor: pointer; }
 .adm-switch input { width: auto; margin: 0 6px 0 0; vertical-align: -2px; }
 .adm-switch .hint { margin-left: 4px; }
+
+/* ---------- 发布页的音视频条目 ----------
+   一条一块、字段纵向排：手机上（后台在 720px 以下侧栏收起）横排会把地址框挤没。 */
+.adm-media-item { border: 1px solid var(--adm-border); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
+.adm-media-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-size: 13px; font-weight: 500; }
+.adm-media-item .adm-field { margin-bottom: 10px; }
+.adm-media-item .adm-field:last-child { margin-bottom: 0; }
+.adm-media-auto { display: flex; align-items: center; font-size: 13px; cursor: pointer; }
+.adm-media-auto input { width: auto; margin-right: 6px; vertical-align: -2px; }
+.adm-media-add { display: flex; gap: 8px; margin-top: 4px; }
+.adm-note { font-size: 12px; color: var(--adm-muted); line-height: 1.6; margin-top: 8px; }
 .adm-input, .adm-textarea {
   width: 100%; border: 1px solid var(--adm-border); border-radius: 8px; padding: 10px 12px;
   font-size: 14px; font-family: inherit; color: var(--adm-text); outline: none; background: #fff;

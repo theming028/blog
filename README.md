@@ -42,7 +42,7 @@ node -e "console.log(require('crypto').createHash('sha256').update('tm-blog-salt
 
 ## 前端约定
 
-- **默认设置只有一处**：`server.js` 的 `DEFAULT_SETTINGS`。`GET /api/settings` 只回 `cover/avatar/nickname/sign` 四个键；前台不写死任何兜底值。（历史上它散在四个文件，改封面必漏。）
+- **默认设置只有一处**：`server.js` 的 `DEFAULT_SETTINGS`。`GET /api/settings` 只回 `cover/avatar/nickname/sign/snow` 五个键（白名单 `PUBLIC_SETTING_KEYS`）；前台不写死任何兜底值。（历史上它散在四个文件，改封面必漏。）
 - **缓存**：`html/css/js` 是 `no-cache` + `ETag`/`Last-Modified`（命中返回 304），改完**普通刷新即生效**；`public/` 下图片 `max-age=300`；`/api/images/*` 因 id 内容寻址，用 `immutable` 一年。
 - **CSP 为 `script-src 'self'`**：不要往 HTML 里加内联 `<script>`，会被拦。内联样式属性可以用（`style-src` 允许 `unsafe-inline`）。
 - **全局字体**在两份 CSS 的 `body` 上（`wx.css` 前台，`admin.css` 后台/发布/登录），表单控件靠 `font-family: inherit` 跟上。
@@ -53,6 +53,33 @@ node -e "console.log(require('crypto').createHash('sha256').update('tm-blog-salt
   `ali-swift-real-client-ip` / `x-real-ip` / `cf-connecting-ip` → `x-forwarded-for` 首段 → socket，
   每段都过 `net.isIP`；并按**不可伪造的 socket IP** 节流（60 秒 20 次）。云端计数缓存 60 秒，
   兜底查询恒带 `limit=1`，绝不做全表拉取。CDN 后可能因共享出口 IP 而少计。
+
+## 音视频
+
+一条内容可挂最多 3 段 HTML5 音视频，**只存外链地址，本站不托管媒体文件**：
+`post.media = [{ kind: 'video'|'audio', url, poster?, autoplay }]`。
+
+不托管的两条硬理由：① 发布包 = 项目目录全部内容，而 `data/db.json` 已有 4MB 纯图片 base64，
+几十 MB 的视频进库会让每次发布都重传；② base64 内联的接口给不出 HTTP Range，
+iOS Safari 对不能拖动进度的视频源直接拒绝播放。所以拖动进度条要求**源站支持 Range**。
+
+- 服务端 `sanitizeMedia()` 与访客主页共用 `safeHttpUrl()` 白名单：非 http(s)、无点主机、
+  未知 kind 的条目**静默丢弃**（一个贴错的链接不该挡住整条发布）；编辑页在提交前会
+  把非法地址**指名报错**，避免"保存后悄悄没了"。
+- `PUT /api/posts/:id` 只在请求体带 `media` 时才更新它，所以只改正文不会冲掉已有媒体。
+- 自动播放刻意**不写** `autoplay` 属性，改成 `data-autoplay` 由 `feed.js` 的 IntersectionObserver
+  在元素**进入视口时**才 `play()`，且只自动起播一次；属性版会在加载瞬间把屏幕外的播放器一起点着。
+  带声音的自动播放 Chrome / iOS Safari 一律拦，所以自动播放必然配 `muted`。
+- 视频 `preload="none"`（刷列表零流量），音频 `preload="metadata"`（要文件头才画得出时长与进度条）。
+- 同一时刻只允许一个在播（`play` 事件不冒泡，监听走捕获阶段）；滚出视口自动暂停。
+- `video` / `audio` 在双击点赞的排除列表里：原生双击是切全屏，不该被当成点赞。
+
+**云端建列（发布前必须先执行，否则发帖会被 PostgREST 以"列不存在"打回 400）**：
+
+```sql
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS media jsonb NOT NULL DEFAULT '[]'::jsonb;
+UPDATE posts SET media = '[]'::jsonb WHERE media IS NULL;
+```
 
 ## 发布
 
