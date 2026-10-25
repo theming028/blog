@@ -152,6 +152,10 @@ svg { display: block; }
 .adm-field { margin-bottom: 20px; }
 .adm-field > label { display: block; font-size: 13px; color: var(--adm-text); font-weight: 500; margin-bottom: 8px; }
 .adm-field .hint { font-size: 12px; color: var(--adm-muted); font-weight: 400; margin-left: 6px; }
+/* 单个复选框当开关用（飘雪）。原生 checkbox 不吃 .adm-input 那套宽度，只对齐不改尺寸 */
+.adm-switch { cursor: pointer; }
+.adm-switch input { width: auto; margin: 0 6px 0 0; vertical-align: -2px; }
+.adm-switch .hint { margin-left: 4px; }
 .adm-input, .adm-textarea {
   width: 100%; border: 1px solid var(--adm-border); border-radius: 8px; padding: 10px 12px;
   font-size: 14px; font-family: inherit; color: var(--adm-text); outline: none; background: #fff;

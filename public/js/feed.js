@@ -756,6 +756,9 @@ async function loadSettings() {
   $('#coverName').textContent = s.nickname || '';
   $('#coverSign').textContent = s.sign || '';
   $('#coverSign').style.display = s.sign ? '' : 'none';
+  /* 飘雪：只有精确等于 'off' 才关。取数失败时 s.snow 是 undefined，与 DEFAULT_SETTINGS
+     的 'on' 同向，不会因为一次请求失败就整站没雪。关掉时两张画布都不创建，零开销。 */
+  if (window.Snow) Snow.setEnabled(s.snow !== 'off');
   $('#copyright').textContent = `© ${new Date().getFullYear()} ${s.nickname || ''} · 朝夕光年`;
 }
 
