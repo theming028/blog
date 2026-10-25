@@ -92,9 +92,11 @@ function renderMedia() {
         <label>封面图 <span class="hint">选填；不填时视频区域是黑的</span></label>
         <input class="adm-input" data-k="poster" type="text" value="${esc(m.poster || '')}" placeholder="https://…/cover.jpg">
       </div>` : ''}
-      <div class="adm-field">
-        <label class="adm-media-auto"><input type="checkbox" data-k="autoplay" ${m.autoplay ? 'checked' : ''}> 自动播放</label>
-      </div>
+      ${m.kind === 'video' ? `<div class="adm-field">
+        <label class="adm-media-auto"><input type="checkbox" data-k="autoplay" ${m.autoplay ? 'checked' : ''}> 自动播放 <span class="hint">会静音起播，且只在滚到可见时开始</span></label>
+      </div>` : `<div class="adm-field">
+        <label class="adm-media-auto"><input type="checkbox" data-k="autoplay" disabled> 自动播放 <span class="hint">音频不支持：浏览器只允许静音自动播放，那样就只剩进度条在走、完全没声</span></label>
+      </div>`}
     </div>`).join('');
   const full = media.length >= MEDIA_MAX;
   $('#btnAddVideo').disabled = full;
@@ -134,21 +136,29 @@ $('#eMedia').addEventListener('click', (e) => {
   renderMedia();
 });
 
-/* 提交前清洗 + 校验；返回 null 表示有错且已提示 */
-function mediaToSave() {
+/* 提交前清洗 + 校验；返回 null 表示有错且已提示。
+   strict=true（发表）：空地址行、非法地址都拦下来，让用户当场改。
+   strict=false（存草稿）：只跳过空行并明确告知——留了一行没填完不该让草稿也存不了，
+   但"非法地址"仍然要拦：那是会静默变成"保存后视频没了"的那类问题。 */
+function mediaToSave(strict) {
   const out = [];
+  let skipped = 0;
   for (let i = 0; i < media.length; i++) {
     const m = media[i];
     const url = String(m.url || '').trim();
-    if (!url) { alertDlg(`第 ${i + 1} 段${m.kind === 'video' ? '视频' : '音频'}还没填地址，或先移除它`); return null; }
+    if (!url) {
+      if (strict) { alertDlg(`第 ${i + 1} 段${m.kind === 'video' ? '视频' : '音频'}还没填地址，或先移除它`); return null; }
+      skipped++; continue;
+    }
     if (!urlOk(url)) { alertDlg(`第 ${i + 1} 段的地址不是合法的 http(s) 直链`); return null; }
     if (m.kind === 'video' && String(m.poster || '').trim() && !urlOk(m.poster)) {
       alertDlg(`第 ${i + 1} 段视频的封面地址不是合法的 http(s) 链接`); return null;
     }
-    const one = { kind: m.kind, url, autoplay: !!m.autoplay };
+    const one = { kind: m.kind, url, autoplay: !!m.autoplay && m.kind === 'video' };
     if (m.kind === 'video' && String(m.poster || '').trim()) one.poster = String(m.poster).trim();
     out.push(one);
   }
+  if (skipped) showToast(`已跳过 ${skipped} 段没填地址的音视频`);
   return out;
 }
 
@@ -164,7 +174,7 @@ function collect() {
 async function save(status) {
   if (saving) return;
   const b = collect();
-  const m = mediaToSave();
+  const m = mediaToSave(status !== 'draft');
   if (m === null) return;
   b.media = m;
   if (!b.content && !b.images.length && !b.media.length) {
@@ -173,10 +183,15 @@ async function save(status) {
   }
   saving = true;
   try {
-    if (editId) {
-      await api(`/api/posts/${encodeURIComponent(editId)}`, { method: 'PUT', body: { ...b, status } });
-    } else {
-      await api('/api/posts', { method: 'POST', body: { ...b, status } });
+    const r = editId
+      ? await api(`/api/posts/${encodeURIComponent(editId)}`, { method: 'PUT', body: { ...b, status } })
+      : await api('/api/posts', { method: 'POST', body: { ...b, status } });
+    /* 服务端可能因为云端缺 media 列而把音视频降级掉（帖子照发，视频不存）。
+       这种情况必须当面说清楚，跳走就再也看不见了——静默丢内容比报错更糟。 */
+    if (r && r.warning && b.media.length) {
+      await alertDlg(r.warning);
+      saving = false;
+      return;   // 留在编辑页，让用户决定是先去建列还是放弃视频
     }
     location.href = '/admin';
   } catch (e) {

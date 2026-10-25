@@ -111,13 +111,18 @@ input, textarea, select { font-family: inherit; }
 .p-single img { width: 100%; height: auto; display: block; cursor: zoom-in; margin-top: 8px; background: #F2F2F2; }
 
 /* 音视频：宽度与图片一致（撑满内容容器），不外套卡片、不加描边。
-   视频给 16:10 的兜底高度：preload="none" 时元素在拿到元数据前高度是 0，
-   不兜底的话整条帖子会在"点播放 → 开始加载"的瞬间往下跳一截（移动端最明显）。
-   有 poster 时由 poster 撑，object-fit: contain 保证不裁画面。 */
+   视频要兜一个高度：preload="none" 时元素在拿到元数据前高度是 0，
+   不兜的话整条帖子会在"点播放 → 开始加载"的瞬间往下跳一截（移动端最明显）。
+   这里用 aspect-ratio 而不是 min-height：min-height 在元数据到位后仍然生效，
+   手机上内容容器约 293px 宽、16:9 视频自然高只有 ~165px，
+   结果最常见的横屏视频一律被 letterbox、控制条下面多一条空带。
+   aspect-ratio 给的是"固有比例"，浏览器拿到真实尺寸后会自己让位。 */
 .p-media-el { display: block; width: 100%; margin-top: 8px; border-radius: 4px; background: #16181A; }
-video.p-media-el { min-height: 190px; object-fit: contain; }
+video.p-media-el { aspect-ratio: 16 / 10; object-fit: contain; }
+/* 音频条不自定义背景：原生控制条会盖掉大半，写了等于没写（#F7F7F7 相对
+   帖子的 #fff 只有 1.06:1），只留间距与圆角。 */
 .p-audio { margin-top: 8px; }
-.p-audio .p-media-el { min-height: 40px; background: #F7F7F7; }
+.p-audio .p-media-el { background: none; }
 
 .p-location { display: inline-flex; align-items: center; gap: 3px; color: var(--wx-blue); font-size: 12px; margin-top: 8px; cursor: default; }
 .p-location svg { width: 12px; height: 12px; fill: var(--wx-blue); }

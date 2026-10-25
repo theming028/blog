@@ -60,27 +60,39 @@ node -e "console.log(require('crypto').createHash('sha256').update('tm-blog-salt
 `post.media = [{ kind: 'video'|'audio', url, poster?, autoplay }]`。
 
 不托管的两条硬理由：① 发布包 = 项目目录全部内容，而 `data/db.json` 已有 4MB 纯图片 base64，
-几十 MB 的视频进库会让每次发布都重传；② base64 内联的接口给不出 HTTP Range，
+几十 MB 的视频一旦进库会让每次发布都重传；② base64 内联的接口给不出 HTTP Range，
 iOS Safari 对不能拖动进度的视频源直接拒绝播放。所以拖动进度条要求**源站支持 Range**。
 
 - 服务端 `sanitizeMedia()` 与访客主页共用 `safeHttpUrl()` 白名单：非 http(s)、无点主机、
-  未知 kind 的条目**静默丢弃**（一个贴错的链接不该挡住整条发布）；编辑页在提交前会
-  把非法地址**指名报错**，避免"保存后悄悄没了"。
-- `PUT /api/posts/:id` 只在请求体带 `media` 时才更新它，所以只改正文不会冲掉已有媒体。
-- 自动播放刻意**不写** `autoplay` 属性，改成 `data-autoplay` 由 `feed.js` 的 IntersectionObserver
-  在元素**进入视口时**才 `play()`，且只自动起播一次；属性版会在加载瞬间把屏幕外的播放器一起点着。
-  带声音的自动播放 Chrome / iOS Safari 一律拦，所以自动播放必然配 `muted`。
+  未知 kind、超过 2048 字符的条目**静默丢弃**（一个贴错的链接不该挡住整条发布），
+  并回传被丢条数；编辑页在提交前会把非法地址**指名报错**，避免"保存后悄悄没了"。
+  更新时若一批条目被全部丢光，**不会**覆盖原有媒体（真要清空请显式传 `media: []`）。
+- **CSP 放开两条是硬前提**：`media-src http: https:` 与 `img-src` 补 `http: https:`（封面图）。
+  只写 `default-src 'self'` 会把外链媒体整个拦死，症状是代码全对、线上一个字节都拉不到，
+  控制台报 `media-src` 违规 + `MEDIA_ELEMENT_ERROR: Media load rejected by URL safety check`。
+- 地址必须是 https：站点在 https 下，http 的媒体会被浏览器按混合内容拦掉。
+- `PUT /api/posts/:id` 只在请求体含 `media` 时才更新它，所以只改正文不会冲掉已有媒体。
+- 空正文 + 只有音视频 允许发布（纯视频动态是主用途）。
+- 自动播放只对**视频**开放：音频若自动播放必然静音（浏览器策略），只剩进度条在走没声音，
+  所以编辑页里音频行的勾选框是禁用的，渲染层也不给 audio 加 `data-autoplay`。
+- 自动播放刻意**不写** `autoplay` 属性，改成 `data-autoplay` 交给 `feed.js` 的 IntersectionObserver
+  在元素**进入视口 25% 面积**时才 `play()`，且只在 play 真正成功后记一次标记（iOS 上非手势的
+  play() 可能被拒一次，提前记标记会让这条视频此后永不再自动起播）；另有 autoTried 防止反复重试。
 - 视频 `preload="none"`（刷列表零流量），音频 `preload="metadata"`（要文件头才画得出时长与进度条）。
-- 同一时刻只允许一个在播（`play` 事件不冒泡，监听走捕获阶段）；滚出视口自动暂停。
+- 同一时刻只允许一个在播（`play` 事件不冒泡，监听走捕获阶段）；滚出视口自动暂停；
+  帖子节点被重建前会先 `unobserve` + `pause` 并保留播放位置，避免"点个赞视频就从头播"。
 - `video` / `audio` 在双击点赞的排除列表里：原生双击是切全屏，不该被当成点赞。
 
-**云端建列（发布前必须先执行，否则发帖会被 PostgREST 以"列不存在"打回 400）**：
+**云端建列**（发布前先执行）：
 
 ```sql
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS media jsonb NOT NULL DEFAULT '[]'::jsonb;
 UPDATE posts SET media = '[]'::jsonb WHERE media IS NULL;
 ```
 
+缺列时 `SupabaseStore.supportsMedia()` 会探测到并**降级为不带 media 字段照发**，
+同时在响应里回 `warning`、编辑页当面提示"视频未保存"——否则这个可选功能会把全站
+发帖与编辑打成 500（`createPost` 无条件带 media，缺列就是整条写入被 PostgREST 打回）。
 ## 发布
 
 QW Pages（动态页）：`category: "dynamic"`、`entrypoint: "server.js"`、`port: 8081`、`with_database: true`，先 provision 再建表。

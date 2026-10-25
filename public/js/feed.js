@@ -27,32 +27,46 @@ const ICON_IMG = '<svg viewBox="0 0 24 24"><path d="M21 3H3a1 1 0 0 0-1 1v16a1 1
 const imgUrl = (id) => `/api/images/${encodeURIComponent(id)}`;
 
 /* ---------- 音视频播放控制 ----------
-   三条规则，都是为了"不占资源、不吵"：
+   四条规则，都是为了"不占资源、不吵"：
    1) 同一时刻只允许一个在播。play 事件不冒泡，所以监听必须走捕获阶段；
       不做这条，自动播放的那条滚过去之后还在出声，用户找不到是谁在响。
    2) 滚出视口就暂停。IntersectionObserver 的回调只在跨越阈值时触发，
       比 scroll 监听 + getBoundingClientRect 便宜得多，也不会引起重排。
-   3) data-autoplay 的元素"首次进入视口"才 play()，且只自动起播一次
-      （用户手动暂停后不该被我们重新点着）。
+   3) data-autoplay 的元素"进入视口足够多"才 play()，且只自动起播一次。
+      阈值不能是默认的 0：露出 1px 就起播的话，滚动途中每条视频都会去抢
+      "唯一在播"那个槽位，用户正在看的那条被反复打断。取 0.25 面积。
+   4) autoDone 只能在 play() 真正成功后写。iOS 上 preload="none" 的非手势
+      play() 可能被拒一次，若在调用前就置标记，这条视频此后永远不会自动起播。
+      同时用 autoTried 兜住"被拒后每个交叉事件都重试"的无限循环。
    没有 IntersectionObserver 的老内核退化为"不自动播、其余照常手动播"，不影响手动播放。 */
 const mediaIO = 'IntersectionObserver' in window
   ? new IntersectionObserver((entries) => {
       for (const en of entries) {
         const el = en.target;
         if (en.isIntersecting) {
-          if (el.dataset.autoplay === '1' && el.dataset.autoDone !== '1') {
-            el.dataset.autoDone = '1';
-            const pr = el.play();
-            if (pr && pr.catch) pr.catch(() => {});   // 被策略拦掉时静默，不能打断整页
+          if (el.dataset.autoplay === '1' && el.dataset.autoDone !== '1' && el.dataset.autoTried !== '1') {
+            el.dataset.autoTried = '1';
+            let pr = null;
+            try { pr = el.play(); } catch (e) { pr = null; }   // 老内核可能直接抛，不能打断整页
+            if (pr && pr.then) pr.then(() => { el.dataset.autoDone = '1'; }, () => {});
+            else el.dataset.autoDone = '1';
           }
         } else if (!el.paused) el.pause();
       }
-    }, { rootMargin: '0px' })
+    }, { threshold: 0.25 })
   : null;
 
 function observeMedia() {
   if (!mediaIO) return;
   $$('.p-media-el').forEach((el) => mediaIO.observe(el));
+}
+
+/* 节点被替换前先把旧元素交还给 IO 并停下：
+   observeMedia() 只加不减，重建过的帖子留下的旧节点会被 IO 一直强引用，
+   整页翻下来这些脱离文档的子树（含 video/audio 与它们的解码缓冲）都不回收。 */
+function releaseMedia(root) {
+  if (!mediaIO || !root) return;
+  $$('.p-media-el', root).forEach((el) => { try { el.pause(); } catch (e) {} mediaIO.unobserve(el); });
 }
 
 document.addEventListener('play', (e) => {
@@ -64,6 +78,7 @@ document.addEventListener('play', (e) => {
 /* ---------- 渲染 ---------- */
 function renderFeed() {
   const feed = $('#feed');
+  releaseMedia(feed);          // 旧节点交还给 IO 并停下，别让上一页的视频继续在后台出声
   if (!state.posts.length) {
     feed.innerHTML = '<div class="loading">还没有内容，点右上角相机发布第一条吧</div>';
     return;
@@ -105,10 +120,13 @@ function renderPost(p) {
   const mediaHtml = (p.media || []).map((m) => {
     if (!m || (m.kind !== 'video' && m.kind !== 'audio')) return '';
     if (!/^https?:\/\//i.test(m.url || '')) return '';
-    const auto = m.autoplay ? ' data-autoplay="1" muted' : '';
     if (m.kind === 'audio') {
-      return `<div class="p-audio"><audio class="p-media-el" controls preload="metadata"${auto} src="${esc(m.url)}">当前浏览器不支持音频播放。</audio></div>`;
+      /* 音频不给自动播放：能自动起播的必然被静音（浏览器策略），结果就是
+         "一条进度条在走、完全没声"的音频条，比不播更让人困惑。
+         编辑页里音频那一行的勾选框也是禁用 + 说明，两处口径一致。 */
+      return `<div class="p-audio"><audio class="p-media-el" controls preload="metadata" src="${esc(m.url)}">当前浏览器不支持音频播放。</audio></div>`;
     }
+    const auto = m.autoplay ? ' data-autoplay="1" muted' : '';
     const poster = m.poster ? ` poster="${esc(m.poster)}"` : '';
     return `<video class="p-media-el" controls playsinline webkit-playsinline${poster} preload="none"${auto} src="${esc(m.url)}">当前浏览器不支持视频播放。</video>`;
   }).join('');
@@ -181,13 +199,37 @@ function refreshPost(pid) {
   const old = $(`.post[data-pid="${pid}"]`);
   if (!p || !old) return;
   const bar = $('#cbar');
+  /* 整条重建会连带销毁正在播的音视频：点赞、发评论、删评论都走这里，
+     等于"我赞了个点，视频从头开始"。所以先把每条的播放位置与自动播标记摘下来，
+     重建后再贴回去。 */
+  const mediaState = $$('.p-media-el', old).map((el) => ({
+    t: el.currentTime || 0,
+    playing: !el.paused && !el.ended,
+    done: el.dataset.autoDone === '1',
+    tried: el.dataset.autoTried === '1',
+  }));
+  releaseMedia(old);
   // 外点不再收起表单，所以整条重建时也不能把用户写了一半的内容弄丢：
   // 先把表单节点摘下（值随节点保留），重建后再挂回去并恢复展开态
   const reopen = bar.classList.contains('show') && state.activePid === pid;
   if (old.contains(bar)) stashCbar();
   const wrap = document.createElement('div');
   wrap.innerHTML = renderPost(p);
-  old.replaceWith(wrap.firstElementChild);
+  const fresh = wrap.firstElementChild;
+  old.replaceWith(fresh);
+  $$('.p-media-el', fresh).forEach((el, i) => {
+    const s = mediaState[i];
+    if (!s) return;
+    if (s.done) el.dataset.autoDone = '1';
+    if (s.tried) el.dataset.autoTried = '1';
+    if (!s.playing && !s.t) return;
+    const resume = () => {
+      try { if (s.t > 0.2) el.currentTime = s.t; } catch (e) { /* 未就绪时忽略，下面照样起播 */ }
+      if (s.playing) { const pr = el.play(); if (pr && pr.catch) pr.catch(() => {}); }
+    };
+    if (el.readyState >= 1) resume();
+    else el.addEventListener('loadedmetadata', resume, { once: true });
+  });
   observeMedia();   // 重建过的那条里有新节点，得重新登记给 IntersectionObserver
   if (reopen && mountCbar(pid)) bar.classList.add('show');
 }

@@ -38,16 +38,20 @@ const DEFAULT_SETTINGS = {
   snow: 'on',
 };
 
-/* 访客填的主页只允许 http(s)。统一"补协议 → new URL → 存 href"，
+/* 访客填的主页、友链、音视频外链都走这一道：只允许 http(s)。统一"补协议 → new URL → 存 href"，
  * 存下来的值必然以 http(s):// 开头，javascript: / data: 之类进不来。 */
+const URL_MAX = 2048;   // 浏览器与多数 CDN 的实际上限；不设限等于给库塞任意大的字符串
 function safeHttpUrl(raw) {
   const v = String(raw == null ? '' : raw).trim();
-  if (!v) return null;
-  if (/\s/.test(v)) return null; // 含空白的不是合法主页，直接判无效
+  if (!v || v.length > URL_MAX) return null;   // 长度上限：一条 50 万字符的 URL 会原样进库并被每次发布重传
+  if (/\s/.test(v)) return null; // 含空白的不是合法地址，直接判无效
   let u;
   try { u = new URL(/^https?:\/\//i.test(v) ? v : 'https://' + v); } catch (e) { return null; }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
   if (!u.hostname || !/\./.test(u.hostname)) return null; // 拒 "javascript" 这类无点主机
+  // 内嵌凭证一律抹掉：`https://good.com@evil.com` 视觉上像 good.com，实际请求 evil.com，
+  // 是典型的钓鱼写法；而 `https://user:pw@host` 会把口令明文摊在公开列表接口和页面 src 上。
+  if (u.username || u.password) { u.username = ''; u.password = ''; }
   return u.href;
 }
 
@@ -57,25 +61,31 @@ function safeHttpUrl(raw) {
  *  2) base64 内联的接口给不出 HTTP Range，iOS Safari 对不能 seek 的视频源直接拒绝播放。
  * 所以这里只收 URL + 类型 + 是否自动播放，播放与拖动进度条由源站负责。
  * 非法条目（类型不认识、URL 不是 http(s)）静默丢弃而不是整条报错：
- * 用户贴错一个链接不该让他刚写的正文发不出去。 */
+ * 用户贴错一个链接不该让他刚写的正文发不出去。但"丢了几条"要回传给调用方——
+ * 更新时如果全部条目都被丢光，不能把人家原有的媒体当成"用户想清空"。 */
 const MEDIA_KINDS = ['video', 'audio'];
 const MEDIA_MAX = 3;
 function sanitizeMedia(raw) {
-  if (!Array.isArray(raw)) return [];
-  const out = [];
+  const empty = { list: [], dropped: 0 };
+  if (!Array.isArray(raw)) return empty;
+  const list = [];
+  let dropped = 0;
   for (const it of raw) {
-    if (!it || typeof it !== 'object') continue;
-    const kind = MEDIA_KINDS.indexOf(String(it.kind)) >= 0 ? String(it.kind) : null;
+    if (!it || typeof it !== 'object') { dropped++; continue; }
+    // kind 必须是字符串：String(['video']) 也等于 'video'，数组/对象不该蒙混过关
+    const kind = typeof it.kind === 'string'
+      ? (MEDIA_KINDS.indexOf(it.kind.trim().toLowerCase()) >= 0 ? it.kind.trim().toLowerCase() : null)
+      : null;
     const url = safeHttpUrl(it.url);
-    if (!kind || !url) continue;
+    if (!kind || !url) { dropped++; continue; }
     const m = { kind, url, autoplay: it.autoplay === true || it.autoplay === 'true' };
     // 封面只对视频有意义；音频给个 poster 也无处显示，省得一团糊
     const poster = kind === 'video' ? safeHttpUrl(it.poster) : null;
     if (poster) m.poster = poster;
-    out.push(m);
-    if (out.length >= MEDIA_MAX) break;
+    list.push(m);
+    if (list.length >= MEDIA_MAX) break;
   }
-  return out;
+  return { list, dropped };
 }
 
 const PORT = Number(process.env.PORT || 8081);
@@ -96,7 +106,14 @@ const SECURITY_HEADERS = {
     "default-src 'self'",
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob:",
+    /* 音视频与封面是外链（本站不托管媒体文件），所以 media-src / img-src 必须放开到 http(s)。
+       不加这两条，default-src 'self' 会把所有站外媒体直接拦死——实测报
+       "media-src ← …" 与 MEDIA_ELEMENT_ERROR: Media load rejected by URL safety check，
+       功能看着代码全对、线上一个字节都拉不到。
+       注意：https 页面上引用 http 媒体仍会被浏览器按混合内容拦掉，那是浏览器策略，
+       与 CSP 无关，所以编辑页提示里写明了要用 https 直链。 */
+    "img-src 'self' data: blob: http: https:",
+    "media-src http: https:",
     "font-src 'self'",
     "connect-src 'self'",
     "form-action 'self'",
@@ -411,17 +428,20 @@ async function handleApi(req, res, pathname, query) {
 
   if (pathname === '/api/posts' && method === 'POST') {
     const b = await readBody(req);
+    // 先规范化 images 再做"三空"判定：上一版判定时用的是未规范化的 b.images，
+    // 于是 {"content":"","images":"abc"} 能过关（字符串有 length），产出一条三全的空帖
+    const images = Array.isArray(b.images) ? b.images.slice(0, 9) : [];
     const media = sanitizeMedia(b.media);
-    if (!b.content && !(b.images || []).length && !media.length) return sendError(res, 400, '内容、图片、音视频不能同时为空');
+    if (!b.content && !images.length && !media.list.length) return sendError(res, 400, '内容、图片、音视频不能同时为空');
     if (String(b.content || '').length > POST_MAX) return sendError(res, 400, `正文不能超过 ${POST_MAX} 字`);
     const post = await store.createPost({
       content: String(b.content || ''),
       location: b.location ? String(b.location) : null,
-      images: Array.isArray(b.images) ? b.images.slice(0, 9) : [],
-      media,
+      images,
+      media: media.list,
       status: b.status === 'draft' ? 'draft' : 'published',
     });
-    return sendJson(res, 200, { post });
+    return sendJson(res, 200, { post, warning: store.mediaWarning });
   }
 
   m = pathname.match(/^\/api\/posts\/([\w-]+)$/);
@@ -443,11 +463,18 @@ async function handleApi(req, res, pathname, query) {
     if (b.location !== undefined) patch.location = b.location ? String(b.location) : null;
     if (b.images !== undefined) patch.images = Array.isArray(b.images) ? b.images.slice(0, 9) : [];
     // 与创建走同一个清洗：否则"编辑时贴个 javascript: 链接"就能绕过发布时的校验
-    if (b.media !== undefined) patch.media = sanitizeMedia(b.media);
+    if (b.media !== undefined) {
+      const mm = sanitizeMedia(b.media);
+      /* 全被丢光且原本有货时不动 media：
+         "贴错一个链接"从"不挡发布"变成"顺手删掉旧媒体"是不可接受的。
+         真要清空请显式传 media: []（清洗后 list 为空、dropped 为 0，走 else 分支）。 */
+      if (mm.list.length || !mm.dropped) patch.media = mm.list;
+      else console.warn('[media] 更新请求里的音视频条目全部非法，已保留原有媒体不覆盖');
+    }
     if (b.status !== undefined) patch.status = b.status === 'draft' ? 'draft' : 'published';
     const post = await store.updatePost(m[1], patch);
     if (!post) return sendError(res, 404, 'post not found');
-    return sendJson(res, 200, { post });
+    return sendJson(res, 200, { post, warning: store.mediaWarning });
   }
   if (m && method === 'DELETE') {
     const post = await store.getPost(m[1]);
@@ -689,8 +716,11 @@ const server = http.createServer(async (req, res) => {
   try {
     if (pathname.startsWith('/api/')) return await handleApi(req, res, pathname, u.searchParams);
   } catch (e) {
+    /* 上游报错原文（含 Supabase 主机名与 /rest/v1/... 路径）只进服务端日志：
+       直接吐给浏览器等于把内部拓扑和一句 SQL 错误细节公开出去，
+       而前台/后台看到的本来就该是"服务暂时不可用"这种可行动的信息。 */
     console.error('[api error]', pathname, e.message);
-    if (!res.headersSent) return sendError(res, 500, e.message || 'server error');
+    if (!res.headersSent) return sendError(res, 500, '服务暂时不可用，请稍后重试');
     return res.end();
   }
 
