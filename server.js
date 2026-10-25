@@ -26,12 +26,16 @@ const IMAGE_SIGNATURES = {
 /* 唯一的数据源默认值：前端不再各自抄一份（此前散在 index.html 兜底 src、
  * feed.js state.settings、admin.js DEFAULTS 共 4 处，改封面时真实漏改过）。
  * 对外只通过 GET /api/settings 下发，且只回下面这几个键，服务端自用键不外泄。 */
-const PUBLIC_SETTING_KEYS = ['cover', 'avatar', 'nickname', 'sign'];
+const PUBLIC_SETTING_KEYS = ['cover', 'avatar', 'nickname', 'sign', 'snow'];
 const DEFAULT_SETTINGS = {
   cover: '/demo/cover.png',
   avatar: '/demo/ming.jpg',
   nickname: 'Ming',
   sign: '低调入尘埃',
+  /* 飘雪开关。值是字符串：setSettings 走的是 String(v).trim()，
+     存 'off'/'on' 比存 'false'/'true' 更不容易被后来的布尔判断绕晕——
+     只有精确等于 'off' 才关，取数失败时前端拿到 undefined 也仍然是开。 */
+  snow: 'on',
 };
 
 /* 访客填的主页只允许 http(s)。统一"补协议 → new URL → 存 href"，

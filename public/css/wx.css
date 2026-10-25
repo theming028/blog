@@ -377,6 +377,16 @@ input, textarea, select { font-family: inherit; }
 /* 系统开了"减弱动态效果"就不放粒子，只保留计数变化 */
 @media (prefers-reduced-motion: reduce) { .burst { display: none; } }
 
+/* ============ 飘雪（画布由 js/snow.js 创建，开关在后台「设置」） ============ */
+/* 固定全屏 + pointer-events: none：雪压在内容之上，但一律不吃点击——
+   这条比外观更要紧，"看不见 ≠ 不挡"的账在这份文件里已经记过一次了。
+   z-index 5 是算出来的：高于 .phone 里全部内容（0–3），低于气泡 30 / 导航 100 /
+   表情面板 140 / 评论条 260 / 大图查看器 400 / 弹窗 500，
+   所以看大图、写评论、任何对话框打开时都不会有雪糊在操作面上。 */
+#snow { position: fixed; inset: 0; z-index: 5; pointer-events: none; display: block; }
+/* 减弱动态效果下 snow.js 本就不启动；这条是防止浏览器里还留着旧版 JS 时仍有雪 */
+@media (prefers-reduced-motion: reduce) { #snow { display: none; } }
+
 /* 双击落点限制在帖子内；manipulation 关掉浏览器自带的双击缩放，避免和我们的双击点赞打架 */
 .post { touch-action: manipulation; }
 

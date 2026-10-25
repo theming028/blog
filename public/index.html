@@ -95,6 +95,8 @@
 </div>
 
 <script src="/js/common.js"></script>
+<!-- snow.js 必须在 feed.js 之前：feed.js 读到设置后直接调 window.Snow.setEnabled -->
+<script src="/js/snow.js"></script>
 <script src="/js/feed.js"></script>
 </body>
 </html>
