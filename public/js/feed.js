@@ -757,10 +757,6 @@ async function loadSettings() {
   $('#coverSign').textContent = s.sign || '';
   $('#coverSign').style.display = s.sign ? '' : 'none';
   $('#copyright').textContent = `© ${new Date().getFullYear()} ${s.nickname || ''} · 朝夕光年`;
-  /* 飘雪：只有精确等于 'off' 才关。取数失败时 s.snow 是 undefined，
-     与 DEFAULT_SETTINGS 的 'on' 同向，不会因为一次请求失败就整站没雪。
-     关掉时 snow.js 不创建画布也不起 rAF，一点开销都不留。 */
-  if (window.Snow) Snow.setEnabled(s.snow !== 'off');
 }
 
 /* ---------- 网上邻居（友情链接） ---------- */

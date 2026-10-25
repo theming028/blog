@@ -62,8 +62,6 @@ function renderSettings() {
   $('#pickAvatarImg').src = settings.avatar;
   $('#setNickInput').value = settings.nickname || '';
   $('#signInput').value = settings.sign || '';
-  // 只有明确存过 'off' 才算关；老数据没这个键时按服务端下发的默认值（开）走
-  $('#setSnow').checked = settings.snow !== 'off';
 }
 
 function renderStats() {
@@ -289,14 +287,7 @@ $('#btnSetSave').addEventListener('click', async () => {
   try {
     const r = await api('/api/settings', {
       method: 'PUT',
-      // 五项一次写完：合并成一个设置页之后，再拆成"这项现在存、那项待会儿存"就白合了
-      body: {
-        cover: settings.cover,
-        avatar: settings.avatar,
-        nickname: nick,
-        sign: $('#signInput').value.trim(),
-        snow: $('#setSnow').checked ? 'on' : 'off',
-      },
+      body: { cover: settings.cover, avatar: settings.avatar, nickname: nick, sign: $('#signInput').value.trim() },
     });
     settings = r.settings; // 服务端回的是合并后的完整值，不再需要本地默认值兜底
     renderSettings();
