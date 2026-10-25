@@ -41,22 +41,30 @@
 
   /* 「微风」档：参考站风力滑块 −3…+3 取 +1。
      表现为一个稳定的右向基流 + 慢周期阵风调制，幅度远小于落速。 */
-  const BREEZE_BASE = 26;     // 右向基流 px/s
-  const BREEZE_GUST = 17;     // 慢阵风幅度
+  /* 风速：用户看过实机后要求加大一档。基流 26→42 px/s、慢阵风 ±17→±24，
+     仍小于最近层的落速（150–215 px/s），所以是"斜着飘"而不是"横着吹"。 */
+  const BREEZE_BASE = 42;     // 右向基流 px/s
+  const BREEZE_GUST = 24;     // 慢阵风幅度
   const CRYSTAL_SPIN = 0.9;   // 六角晶体自转 rad/s 上限
 
   const COL_W = 7;            // 积雪高度图列宽（CSS px）
   const PILE_MAX_VH = 0.16;   // 积雪最多占视口高 16%，再多会埋掉底部评论框
   const PILE_MAX_PX = 130;
-  const PILE_FULL_S = 70;     // 约 70 秒堆到上限（与屏宽、密度解耦，见 calibrate）
+  /* 每颗雪粒落地把自己那一列抬高"自身高度的 PACK 倍"。
+     上一版是按"70 秒堆满"反推体积系数，结果堆出来的轮廓比画出来的雪粒密得多，
+     只能再补一条平滑雪带才像样——那条雪带就是被判"太假"的东西。
+     现在堆叠高度与盖印形状是同一件事，不需要标定：实测约 2–3 分钟堆到上限。 */
+  const PACK = 1.35;
+  const STAMP_MAX = 2600;     // 盖印记录环形缓冲上限（resize 后重画用）
   const DRIFT_LEN = 0.0105;   // 雪垄的低频空间周期
 
   let sky = null, skyCtx = null, gnd = null, gndCtx = null;
-  let dotSprites = null, crystalSprite = null, pileFill = null, pileShade = null;
-  let W = 0, H = 0, dpr = 1, cols = 0, ground = null, pileCap = 0, pileK = 0;
+  let dotSprites = null, crystalSprite = null;
+  let W = 0, H = 0, dpr = 1, cols = 0, ground = null, pileCap = 0;
   let flakes = [], target = 0, cap = 0, prewarm = true;
-  let raf = 0, lastTs = 0, wind = BREEZE_BASE, landed = 0, landRate = 0;
-  let frameMs = 12, settleTick = 0, pileDirty = 0, pileDrawn = -1;
+  let raf = 0, lastTs = 0, wind = BREEZE_BASE, landed = 0;
+  let stamps = null, stampHead = 0, stampCount = 0;
+  let frameMs = 12, settleTick = 0;
   /* emaDt：帧间隔的滑动平均（不是中位数——掉帧是双峰的，中位数会骗人）。
      halfRate 只有一档：true 表示隔帧不画，即 30Hz。 */
   let emaDt = 16.7, slowRun = 0, fastRun = 0, halfRate = false, lastDraw = 0, lastFlip = 0, tries = 0;
@@ -205,17 +213,6 @@
     sizeOne(sky, skyCtx);
     sizeOne(gnd, gndCtx);
     pileCap = Math.min(H * PILE_MAX_VH, PILE_MAX_PX);
-    const g = gndCtx.createLinearGradient(0, H - pileCap, 0, H);
-    g.addColorStop(0, 'rgba(255,255,255,.99)');
-    g.addColorStop(0.55, 'rgba(250,251,254,.99)');
-    g.addColorStop(1, 'rgba(236,241,250,.99)');
-    pileFill = g;
-    // 雪面上沿的冷灰投影带：白底页面上没有它，雪堆的轮廓会直接消失
-    const sh = gndCtx.createLinearGradient(0, H - pileCap - 10, 0, H - pileCap + 2);
-    sh.addColorStop(0, 'rgba(146,163,190,0)');
-    sh.addColorStop(1, 'rgba(146,163,190,.20)');
-    pileShade = sh;
-    pileDrawn = -1;
   }
 
   function initGround() {
@@ -231,78 +228,73 @@
     }
   }
 
+  /* 迎风侧堆得更高：给落点乘一个低频权重，雪垄会自己长出来 */
   function driftWeight(x) {
-    return 0.7 + 0.6 * (0.5 + 0.5 * Math.sin(x * DRIFT_LEN + wind * 0.02));
+    return 0.7 + 0.6 * (0.5 + 0.5 * Math.sin(x * DRIFT_LEN + wind * 0.012));
   }
 
   function deposit(x, amount) {
     const i = clamp(Math.floor(x / COL_W), 0, cols - 1);
-    // 近似高斯摊到 5 列：只摊 3 列时一颗大颗会在雪面砸出尖角
+    // 摊到 5 列，避免单颗砸出尖角；amount 已经是"自身高度"量级
     const put = (k, w) => { if (k >= 0 && k < cols) ground[k] += amount * w; };
     put(i, 0.3); put(i - 1, 0.18); put(i + 1, 0.18); put(i - 2, 0.08); put(i + 2, 0.08);
   }
 
-  /* 每颗落地给该列抬多少：按 r² 计，系数每次平滑前重标定，
-     推导：每秒新增列高 = land·K·meanR2，要它等于 cols·pileCap / PILE_FULL_S。 */
-  function calibrate() {
-    let land = 0, r2 = 0, n = 0;
-    for (let i = 0; i < flakes.length; i++) {
-      const f = flakes[i];
-      if (f.L === BOKEH) continue;
-      land += f.vy / H; r2 += f.r * f.r; n++;
-    }
-    if (!n || !(land > 0)) { pileK = 0; return; }
-    landRate = land;
-    pileK = (cols * pileCap) / (PILE_FULL_S * land * (r2 / n));
-    if (!Number.isFinite(pileK) || pileK < 0) pileK = 0;
-  }
-
+  /* 高度图只管"下一颗落在多高"，不再负责画任何东西：
+     相邻列高差过大就下滑 + 轻微平滑 + 封顶。 */
   function settle() {
-    calibrate();
-    for (let i = 1; i < cols; i++) {           // 雪堆自己垮
+    for (let i = 1; i < cols; i++) {
       const d = ground[i] - ground[i - 1];
       if (d > 1.6 || d < -1.6) { const move = d * 0.3; ground[i] -= move; ground[i - 1] += move; }
     }
-    for (let i = 1; i < cols - 1; i++) ground[i] = ground[i] * 0.8 + (ground[i - 1] + ground[i + 1]) * 0.1;
+    for (let i = 1; i < cols - 1; i++) ground[i] = ground[i] * 0.86 + (ground[i - 1] + ground[i + 1]) * 0.07;
     for (let i = 0; i < cols; i++) {
       const v = ground[i];
       ground[i] = !Number.isFinite(v) ? 0 : v > pileCap ? pileCap : v < 0 ? 0 : v;
     }
-    pileDirty = 1;
   }
 
-  function edgePath(x2) {
-    const base = H + 2;
-    const y = (i) => base - ground[clamp(i, 0, cols - 1)];
-    const px = (i) => clamp(i * COL_W, 0, W);
-    x2.moveTo(-2, y(0));
-    x2.lineTo(px(0), y(0));
-    // 以列点为控制点、相邻列点中点为终点：标准平滑过点，不会啃出凹坑
-    for (let i = 1; i < cols - 1; i++) {
-      x2.quadraticCurveTo(px(i), y(i), (px(i) + px(i + 1)) / 2, (y(i) + y(i + 1)) / 2);
+  /* 盖印记录用预分配的环形缓冲：落地频率约 50 次/秒，
+     若每次都新建对象就是一笔持续的 GC 压力，复用槽位后运行期零分配。 */
+  function initStamps() {
+    stamps = new Array(STAMP_MAX);
+    for (let i = 0; i < STAMP_MAX; i++) stamps[i] = { L: 0, x: 0, y: 0, d: 0, a: 0, rot: 0, cry: false };
+    stampHead = 0; stampCount = 0;
+  }
+
+  function paint(s) {
+    if (s.cry) {
+      const u = crystalSprite.unit, k = s.d / u, co = Math.cos(s.rot), si = Math.sin(s.rot);
+      gndCtx.setTransform(dpr * co * k, dpr * si * k, -dpr * si * k, dpr * co * k, dpr * s.x, dpr * s.y);
+      gndCtx.globalAlpha = s.a;
+      gndCtx.drawImage(crystalSprite.canvas, -u / 2, -u / 2, u, u);
+      gndCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    } else {
+      gndCtx.globalAlpha = s.a;
+      gndCtx.drawImage(dotSprites[s.L].canvas, s.x - s.d * 0.5, s.y - s.d * 0.5, s.d, s.d);
     }
-    x2.quadraticCurveTo(px(cols - 1), y(cols - 1), W + 2, y(cols - 1));
   }
 
-  /* 积雪只在这层重绘，且只在形状变化时（约 8 次/秒），不跟雪花层一起每帧画 */
-  function drawPile() {
-    const maxH = Math.max.apply(null, ground);
-    if (!pileDirty || Math.abs(maxH - pileDrawn) < 0.5 && maxH > 0.5 === pileDrawn > 0.5) return;
-    pileDrawn = maxH; pileDirty = 0;
-    const x2 = gndCtx;
-    x2.clearRect(0, 0, W, H);
-    if (maxH < 0.3) return;
-    const base = H + 2;
-    x2.globalAlpha = 1;
-    x2.beginPath(); edgePath(x2); x2.lineTo(W + 2, base); x2.lineTo(-2, base); x2.closePath();
-    x2.fillStyle = pileFill; x2.fill();
-    // 上沿投影带：先沿雪面描一条略粗的冷灰线，再压一条白线当雪面高光
-    x2.beginPath(); edgePath(x2);
-    x2.strokeStyle = 'rgba(150,167,193,.30)'; x2.lineWidth = 5; x2.stroke();
-    x2.beginPath(); edgePath(x2);
-    x2.strokeStyle = 'rgba(255,255,255,1)'; x2.lineWidth = 1.6; x2.stroke();
+  /* 把落下的雪粒按它自己的形状、大小、透明度、角度永久画进积雪层。
+     积雪层从此不需要每帧重画，也不需要"雪带"——堆出来的就是这些雪粒本身。 */
+  function stamp(f, y) {
+    const L = LAYERS[f.L];
+    const s = stamps[stampHead];
+    s.L = f.L; s.x = f.x; s.y = y; s.a = f.a;
+    s.d = f.crystal ? f.r * 2 * 1.55 : f.r * 2 * L.soft;
+    s.cry = f.crystal; s.rot = f.rot;
+    paint(s);
+    stampHead = (stampHead + 1) % STAMP_MAX;
+    if (stampCount < STAMP_MAX) stampCount++;
+    // 环形缓冲写满后最旧的记录会被覆盖：画布上的像素不会消失，只有 resize 重画时
+    // 才会丢掉最早那批雪粒——那时它们也已被新雪盖在下面了。
   }
 
+  function restampAll() {
+    if (!gndCtx || !stamps) return;
+    gndCtx.clearRect(0, 0, W, H);
+    for (let i = 0; i < stampCount; i++) paint(stamps[i]);
+  }
   /* ---- 主循环 ---- */
 
   function step() {
@@ -336,8 +328,14 @@
       if (f.x < -30) f.x += W + 60; else if (f.x > W + 30) f.x -= W + 60;
 
       const ci = f.x < 0 ? 0 : f.x > W ? cols - 1 : Math.floor(f.x / COL_W);
-      if (f.y >= H - ground[ci] - f.r * 0.35) {
-        if (f.L !== BOKEH) { landed++; deposit(f.x, pileK * f.r * f.r * driftWeight(f.x)); }
+      const surface = H - ground[ci];
+      if (f.y >= surface - f.r * 0.35) {
+        if (f.L !== BOKEH) {
+          landed++;
+          // 停在雪面上：雪粒中心落在面下 self 半径附近，看起来是"压进去"而不是浮着
+          stamp(f, surface - f.r * 0.55);
+          deposit(f.x, f.r * PACK * driftWeight(f.x));
+        }
         flakes[i] = makeFlake(f.L, true);
         continue;
       }
@@ -361,8 +359,9 @@
       skyCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
+    // 高度图只需慢慢整平，不需要重画任何像素（积雪层的像素是盖印上去的）
     settleTick += dt;
-    if (settleTick > 0.12) { settle(); drawPile(); settleTick = 0; }
+    if (settleTick > 0.25) { settle(); settleTick = 0; }
 
     const ms = now() - t0;
     frameMs = frameMs * 0.9 + ms * 0.1;      // step 自身耗时，仅作诊断
@@ -407,6 +406,7 @@
     gnd.setAttribute('aria-hidden', 'true');
     document.body.appendChild(sky);
     document.body.appendChild(gnd);
+    initStamps();
     skyCtx = sky.getContext('2d', { alpha: true });
     gndCtx = gnd.getContext('2d', { alpha: true });
   }
@@ -414,14 +414,15 @@
   function unmount() {
     stop();
     [sky, gnd].forEach((el) => { if (el && el.parentNode) el.parentNode.removeChild(el); });
-    sky = skyCtx = gnd = gndCtx = null; dotSprites = crystalSprite = pileFill = pileShade = null;
-    ground = null; flakes = []; target = cap = 0;
+    sky = skyCtx = gnd = gndCtx = null; dotSprites = crystalSprite = null;
+    ground = null; flakes = []; stamps = null; stampCount = 0; target = cap = 0;
   }
 
   function relayout() {
     if (!enabled || !sky) return;
     sizeCanvas(); initGround(); bakeAll(); cap = measureCap();
-    pileDrawn = -1; settle(); drawPile();
+    // 画布尺寸一变像素就没了：按盖印记录在新画布上把堆好的雪重新印出来
+    restampAll();
   }
 
   addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(relayout, 220); });
@@ -448,7 +449,7 @@
     stats: () => ({
       on: enabled, flakes: flakes.length, cap, target,
       dpr: +dpr.toFixed(2), frameMs: +frameMs.toFixed(2), emaDt: +emaDt.toFixed(1), halfRate,
-      cols, landed,
+      cols, landed, stamps: stampCount,
       crystals: flakes.reduce((a, f) => a + (f.crystal ? 1 : 0), 0),
       pileMax: ground ? Math.round(Math.max.apply(null, ground)) : 0,
       wind: Math.round(wind),
