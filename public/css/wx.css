@@ -364,6 +364,35 @@ video.p-media-el { aspect-ratio: 16 / 10; object-fit: contain; }
    宽泛的子串匹配交给 common.js 带保护地移除 */
 #mulepage-footer, .mulepage-footer { display: none !important; }
 .loading { text-align: center; color: var(--wx-gray); font-size: 13px; padding: 40px 0; }
+/* ---------- 分享面板 ---------- */
+.dlg-share { width: 320px; text-align: left; }
+.dlg-title { padding: 20px 22px 12px; font-size: 15px; font-weight: 600; color: var(--wx-text); text-align: center; }
+.share-url { display: flex; gap: 8px; padding: 0 18px 12px; }
+.share-url input {
+  flex: 1; min-width: 0; height: 36px; padding: 0 10px; border: .5px solid var(--wx-line); border-radius: 6px;
+  background: var(--wx-box); color: var(--wx-text); font-size: 12px; font-family: inherit;
+}
+.share-url button {
+  flex: none; width: 60px; height: 36px; border: 0; border-radius: 6px;
+  background: var(--wx-blue); color: #fff; font-size: 13px; font-family: inherit; cursor: pointer;
+}
+.share-url button:disabled { opacity: .7; }
+.share-hint { padding: 0 20px 14px; font-size: 12px; line-height: 1.7; color: var(--wx-gray); }
+.share-native {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  margin: 0 18px 16px; height: 38px; width: calc(100% - 36px);
+  border: .5px solid var(--wx-line); border-radius: 6px; background: #fff;
+  color: var(--wx-green); font-size: 14px; font-family: inherit; cursor: pointer;
+}
+.share-native svg { width: 17px; height: 17px; fill: currentColor; }
+.share-native:active { background: var(--wx-box); }
+
+/* ---------- 单条模式（分享直达地址）的返回入口 ---------- */
+.single-back { padding: 14px 24px 0; font-size: 13px; }
+.single-back a { color: var(--wx-blue); display: inline-flex; align-items: center; gap: 4px; }
+.single-back i { font-style: normal; }
+.single-back-link { color: var(--wx-blue); }
+
 .copyright { text-align: center; color: #B8B8B8; font-size: 12px; line-height: 1.8; padding: 20px 16px 6px; }
 /* 访客计数行：紧贴版权下方，同色同字号形成一组页脚信息。
    :empty 是取数失败的兜底——不显示文字但仍把底部留白补回来，页脚不会突然缩短 */
@@ -371,6 +400,10 @@ video.p-media-el { aspect-ratio: 16 / 10; object-fit: contain; }
 .visitors:empty { padding: 0 16px 34px; }
 
 /* 网上邻居（友情链接）— 纯文字链接，无分割线；用页面灰底而非 .phone 的白底 */
+/* 版权（CC 授权条款）提醒：与 .blogroll 同属灰底页脚带，用自身下边框把它们分开——
+   网上邻居没有链接时会整块隐藏，所以分隔线挂在提醒上而不是挂在邻居上。 */
+.license { padding: 20px 24px 22px; background: var(--wx-bg); border-bottom: .5px solid var(--wx-line); }
+.license-text { font-size: 12px; line-height: 1.5; color: #8A9099; word-break: break-word; }
 .blogroll { padding: 24px; background: var(--wx-bg); }
 .blogroll-title { font-size: 13px; color: #8A9099; margin-bottom: 12px; letter-spacing: .5px; text-align: center; }
 /* 这里是 flex 容器，光写 text-align 居中不了子项，必须 justify-content: center */
@@ -447,6 +480,9 @@ video.p-media-el { aspect-ratio: 16 / 10; object-fit: contain; }
   .copyright, .blogroll-item { line-height: 1.45; }
   /* 评论者昵称在触屏下提到中粗，从灰底正文里区分出来 */
   .cmt .nm { font-weight: 500; }
+  /* 版权行底部留白收到 8px（PC 仍是 6px）。触屏判定用 hover/pointer 而不是宽度，
+     所以平板竖屏这类 >480px 的移动设备也能命中；窄窗口的桌面浏览器见下方 480 断点。 */
+  .copyright { padding-bottom: 8px; }
   /* 热区撤掉后翻页只能点按钮本身，尺寸给到 44px 才够手指按 */
   .v-arrow { width: 44px; height: 44px; }
   .v-nav { gap: 20px; bottom: calc(26px + env(safe-area-inset-bottom)); }
@@ -462,7 +498,9 @@ video.p-media-el { aspect-ratio: 16 / 10; object-fit: contain; }
   .p-time, .p-location { font-size: 13px; }
   .p-location svg { width: 13px; height: 13px; }
   .blogroll { padding: 20px 14px; }
-  .copyright { padding: 16px 14px 32px; }
+  .license { padding: 18px 14px 20px; }
+  /* 底部留白与上方触屏规则保持同一个值（原来这里是 32px，会在手机上盖掉触屏那条） */
+  .copyright { padding: 16px 14px 8px; }
   /* 封面按比例收窄，避免未滚动时第一条内容完全看不见；昵称/签名/头像间距随动 */
   .cover { height: 230px; }
   .cover .cover-name, .cover .cover-sign { right: 92px; }

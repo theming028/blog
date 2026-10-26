@@ -23,6 +23,9 @@ const ICON_LIKE_SM = '<svg viewBox="0 0 24 24"><path d="M12 21.3C10.6 20.2 2.5 1
 const ICON_CMT = '<svg viewBox="0 0 24 24"><path d="M12 3C6.5 3 2 6.9 2 11.7c0 2.7 1.4 5.1 3.7 6.7-.2 1-.8 2.2-1.6 3 1.7-.2 3.3-.9 4.4-1.7 1.1.3 2.3.5 3.5.5 5.5 0 10-3.9 10-8.5S17.5 3 12 3z"/></svg>';
 const ICON_PIN = '<svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>';
 const ICON_IMG = '<svg viewBox="0 0 24 24"><path d="M21 3H3a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h18a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1zM8.5 9A1.5 1.5 0 1 1 7 10.5A1.5 1.5 0 0 1 8.5 9zM5 18l4.5-6 3 4 2.5-3 4 5z"/></svg>';
+/* 分享用「转发」弯箭头，不用三点连线那种 share 图标：
+   后者是 Android/iOS 的系统分享符号，微信自己的分享入口一直是这个转发箭头。 */
+const ICON_SHARE = '<svg viewBox="0 0 24 24"><path d="M14 9V5l7 7-7 7v-4.1c-5 0-8.5 1.9-11 5.1 1-5 4-10 11-11z"/></svg>';
 
 const imgUrl = (id) => `/api/images/${encodeURIComponent(id)}`;
 
@@ -248,6 +251,7 @@ function openPop(toggleEl, pid) {
   const pop = document.createElement('div');
   pop.className = 'pop';
   pop.innerHTML = `
+    <div class="pop-item" data-act="share">${ICON_SHARE}<span>分享</span></div>
     <div class="pop-item" data-act="cmt">${ICON_CMT}<span>评论</span></div>`;
   toggleEl.classList.add('on');
   toggleEl.parentElement.appendChild(pop);
@@ -256,6 +260,8 @@ function openPop(toggleEl, pid) {
     if (!item) return;
     e.stopPropagation(); // 气泡自身的监听已处理这条点击，不必再冒到 document 走外点兜底
     closePop();
+    // 分享要在 closePop 销毁节点之前拿好数据：p 是引用，节点没了不影响
+    if (item.dataset.act === 'share') { Share.open(p); return; }
     openCbar(pid, null);
     // 气泡里不再放"点赞/取消点赞"：右下角已有常驻按钮，两个入口行为还不完全一致（一个 +1、一个清空）
     void liked;
@@ -880,12 +886,38 @@ async function loadLinks() {
   } catch (e) { /* 无友链则不展示 */ }
 }
 
+/* ---------- 单条模式（分享出去的直达地址 /?p=post_xxx） ----------
+ * 只渲染这一条、不出分页，并在信息流上方补一条"返回全部"的入口——
+ * 从分享链接进来的人如果不认识你，需要有一条明确的回去的路，
+ * 否则他看完这一条就卡在原地，等于白分享一次。 */
+async function loadSinglePost(id) {
+  const feed = $('#feed');
+  feed.innerHTML = '<div class="loading">加载中…</div>';
+  try {
+    const r = await api(`/api/posts/${encodeURIComponent(id)}`);
+    state.posts = [r.post];
+    state.page = 1; state.pages = 1; state.total = 1;
+    closePop(); closeCbar();
+    renderFeed();
+    renderPager();
+    const back = document.createElement('div');
+    back.className = 'single-back';
+    back.innerHTML = '<a href="/"><i>←</i> 看 Ming 的全部动态</a>';
+    feed.parentNode.insertBefore(back, feed);
+  } catch (e) {
+    feed.innerHTML = '<div class="loading">这条内容不存在，或已经被删除。<br><a class="single-back-link" href="/">← 返回全部内容</a></div>';
+  }
+}
+
 (async () => {
   buildEmojiPanel();
   await loadSettings();
   checkAdmin();
   loadLinks();
   loadVisitors();            // 不 await：页脚计数不该挡信息流
+  // ?p= 必须在 loadPosts 之前分流：两条路都会写 #feed，先跑列表再跑单条会闪一下
+  const singleId = (new URLSearchParams(location.search).get('p') || '').trim();
+  if (singleId) { loadSinglePost(singleId); return; }
   try {
     await loadPosts(1);
   } catch (e) {

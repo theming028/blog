@@ -14,6 +14,7 @@ PORT=3000 HOST=127.0.0.1 node server.js
 | 路由 | 说明 |
 | --- | --- |
 | `/` | 信息流（点赞、评论、回复、大图查看、分页、友链、飘雪） |
+| `/?p=post_xxx` | 单条内容直达地址（分享用；同一份 HTML，head 里的 title/og 由服务端换成这条内容的） |
 | `/admin` | 后台：内容 / 评论审核 / 访客记录 / 友链 / 设置 |
 | `/edit` | 发布与编辑 |
 | `/login` | 后台登录 |
@@ -120,6 +121,42 @@ CREATE TABLE IF NOT EXISTS ip_geo_cache (
 三张表都以 text 主键 + 客户端生成的 id 落地（与 `images` 同一做法），批量删与按 offset 裁剪才不需要 RPC。
 `visit_sessions` 的列名改动要同步 `lib/store.js` 的 `SESSION_COLS` 白名单——PostgREST 遇到未知列是把整条
 PATCH 打回 400，而不是忽略那一列。
+
+## 分享
+
+每条内容都有直达地址 **`/?p=post_xxx`**，前台 pop 气泡里的「分享」打开分享面板：复制链接、
+系统分享（`navigator.share`，不支持就整项隐藏）、微信内引导文案。
+
+**网页不能替用户发朋友圈。** 微信只有两条正路：① 用户在微信内置浏览器点右上角 ··· → 朋友圈，
+卡片内容由 JS-SDK 定制；② 用户复制链接自行粘贴。这个面板做的是 ②，外加系统分享面板
+（iOS/Android 上通常有"微信"，可直接发给好友）。JS-SDK 那条路的前置条件见本节末尾，
+**当前平台分配的域名下物理不可行**，接口已预留、换域名后可直接接。
+
+- **meta 必须在服务端注入**：`lib/share.js` + `serveShareHtml()`。微信/QQ/微博/Telegram 抓链接
+  **不执行 JavaScript**，前端改 `document.title` 对它们完全无效，分享出去就是裸链接。
+  `index.html` 里的 `<!--SHARE-META-->` 是占位符；注入前会先摘掉模板自带的 `<title>`
+  ——两个 title 并存时浏览器取第一个，注入等于没做。占位符和 `</head>` 都找不到时原样返回，
+  分享 meta 是增强项，不该把首页打挂。
+- **草稿不进 meta，也不能从单条接口读到**：`GET /api/posts/:id` 现在对非管理员的草稿返回 404。
+  分享地址是可猜的（id 就摆在列表接口里），少了这道判断，草稿正文就会通过 og:description
+  推给所有爬虫，而爬虫缓存删帖也收不回来。
+- **`og:image` 用绝对地址**（相对路径多数平台直接忽略）；纯文字动态**不输出** og:image，
+  与其给一张默认图让所有文字动态的卡片长得一样，宁缺毋滥。
+- **绝对地址的来源**：优先 `PUBLIC_BASE_URL`（换成自有域名后设成正式域名，最稳），
+  否则用 `x-forwarded-proto` + 白名单过滤过的 `Host`。Host 可伪造，所以只允许
+  `[\w.-]+(:端口)` 这种形状，拼不出就干脆不给绝对地址。
+- **分享动作计入访客记录**：`share`（打开面板）、`share_copy`（复制，失败原因进 detail）、
+  `share_native`（走了系统分享）。由 `share.js` 通过 `window.TMTrack.event()` 上报，
+  与前台其它动作共用一条队列和一份服务端白名单。
+- 面板里的地址由 `Share.urlOf(id)` 生成，规则与 `lib/share.js` 的 `postUrl()` 必须一致。
+
+**将来接 JS-SDK 定制朋友圈卡片**，需要同时满足：① **认证服务号**（订阅号、个人主体不行）
+拿 AppID/AppSecret；② 站点域名在公众号后台配成「JS接口安全域名」——必须是备案在你名下的域名；
+③ 服务端用 `access_token → jsapi_ticket`（各 2 小时有效，要缓存，AppSecret 绝不能下发到前端）
+对当前 URL 算 SHA1 签名，前端 `wx.config` 后 `updateAppMessageShareData` /
+`updateTimelineShareData` 定制标题、摘要、缩略图；④ CSP 要放开 `res.wx.qq.com`
+（现在 `script-src 'self'` 会直接拦死），`connect-src` 也要放行微信的接口域。
+即便全部接上，也只是让用户点右上角分享时带上定制卡片，仍然不能替他发。
 
 ## 音视频
 
