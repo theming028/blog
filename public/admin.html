@@ -22,6 +22,10 @@
         <svg viewBox="0 0 24 24"><path d="M12 3C6.5 3 2 6.9 2 11.7c0 2.7 1.4 5.1 3.7 6.7-.2 1-.8 2.2-1.6 3 1.7-.2 3.3-.9 4.4-1.7 1.1.3 2.3.5 3.5.5 5.5 0 10-3.9 10-8.5S17.5 3 12 3z"/></svg>
         <span>评论管理</span><span class="adm-nav-badge" id="navCmtBadge" style="display:none"></span>
       </button>
+      <button class="adm-nav-item" data-view="visits">
+        <svg viewBox="0 0 24 24"><path d="M12 5c-4.4 0-8.2 2.7-9.5 6C3.8 14.3 7.6 17 12 17s8.2-2.7 9.5-6C20.2 7.7 16.4 5 12 5zm0 9.6a3.6 3.6 0 1 1 0-7.2 3.6 3.6 0 0 1 0 7.2zm0-5.2a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2z"/></svg>
+        <span>访客记录</span><span class="adm-nav-badge" id="navVisitBadge" style="display:none"></span>
+      </button>
       <button class="adm-nav-item" data-view="links">
         <svg viewBox="0 0 24 24"><path d="M10.6 13.4a1 1 0 0 1 0-1.4l1.4-1.4a1 1 0 0 1 1.4 1.4L12 13.4a1 1 0 0 1-1.4 0zM8.5 15.5 7 17a3 3 0 0 0 4.2 4.2l1.5-1.5m2.8-8.2L19 7a3 3 0 1 0-4.2-4.2l-1.5 1.5"/></svg>
         网上邻居
@@ -93,6 +97,47 @@
             <tbody id="cmtTbody"><tr><td colspan="7"><div class="adm-empty">加载中…</div></td></tr></tbody>
           </table>
         </section>
+      </section>
+
+      <!-- 访客记录视图 -->
+      <section class="adm-view" id="viewVisits" hidden>
+        <section class="adm-stats" id="visitStats"></section>
+        <section class="adm-panel">
+          <div class="adm-panel-head adm-visit-head">
+            <div><b>访客记录</b><span class="sub" id="visitCount"></span></div>
+            <div class="adm-visit-tools">
+              <div class="adm-tabs" id="visitRange">
+                <button class="adm-tab active" data-range="today">今天</button>
+                <button class="adm-tab" data-range="7d">近 7 天</button>
+                <button class="adm-tab" data-range="30d">近 30 天</button>
+                <button class="adm-tab" data-range="all">全部</button>
+              </div>
+              <input class="adm-input adm-visit-q" id="visitQ" type="search" maxlength="40" placeholder="搜 IP / 地区 / 设备">
+              <label class="adm-check"><input type="checkbox" id="visitHideAdmin"> 隐藏我自己</label>
+              <button class="adm-btn danger" id="btnVisitBatchDel" style="display:none">批量删除 (<span id="visitSelCount">0</span>)</button>
+            </div>
+          </div>
+          <table class="adm-table adm-visit-table">
+            <!-- 必须 table-layout:fixed + colgroup 钉死列宽：展开行里的 UA / 动作明细都是不换行长文本，
+                 自动布局会把整张表的 min-content 撑宽，超出面板后被 .adm-panel 的 overflow:hidden 裁掉，
+                 症状是"明细列凭空消失"、看着像没渲染。超长内容一律省略号，完整值挂 title。
+                 列宽按 .adm-body 的 min-width:900px 排（可用宽 ~852px），7 列各留到 90–150px。 -->
+            <colgroup>
+              <col class="c-chk"><col class="c-geo"><col class="c-dev"><col class="c-time2">
+              <col class="c-dur"><col class="c-acts"><col class="c-op">
+            </colgroup>
+            <thead><tr>
+              <th class="chk-col"><input type="checkbox" id="visitCheckAll"></th>
+              <th>IP · 地区</th><th>设备 / 浏览器</th><th class="hide-sm">进入时间</th>
+              <th>停留时长</th><th class="hide-sm">行为</th><th style="text-align:right">明细</th>
+            </tr></thead>
+            <tbody id="visitTbody"><tr><td colspan="7"><div class="adm-empty">加载中…</div></td></tr></tbody>
+          </table>
+          <div class="adm-foot" id="visitPager"></div>
+        </section>
+        <!-- 留存与隐私口径写在页面上，而不是只写在 README 里：
+             看这个页面的人需要立刻知道"存了什么、存多久、怎么清" -->
+        <p class="adm-note" id="visitNote"></p>
       </section>
 
       <!-- 网上邻居视图 -->

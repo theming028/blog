@@ -1,4 +1,4 @@
-/* 朝夕光年 · 管理后台：内容 / 评论（审核+批量删除） / 网上邻居 / 设置（签名+封面+头像+昵称） */
+/* 朝夕光年 · 管理后台：内容 / 评论（审核+批量删除） / 访客记录 / 网上邻居 / 设置（签名+封面+头像+昵称） */
 'use strict';
 
 const ICON_IMG = '<svg viewBox="0 0 24 24"><path d="M21 3H3a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h18a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1zM8.5 9A1.5 1.5 0 1 1 7 10.5A1.5 1.5 0 0 1 8.5 9zM5 18l4.5-6 3 4 2.5-3 4 5z"/></svg>';
@@ -14,21 +14,33 @@ let editingLinkId = null;
 let lastCmtTotal = null;
 let pollTimer = null;
 
+/* 访客记录视图的状态 */
+let visitRange = 'today';
+let visitQ = '';
+let visitHideAdmin = false;
+let visitPage = 1;
+let visitSelected = new Set();
+let visitRows = [];        // 当前页的会话，展开时间线时直接从这儿取，不再请求
+let visitLabels = {};      // 动作类型的中文名由服务端下发，前后端只维护一份白名单
+let visitOnline = -1;      // 上一次轮询的"正在浏览"人数，用来判断要不要整表重取
+
 const STATUS_LABEL = { visible: '已显示', pending: '待审核', hidden: '已屏蔽' };
 const STATUS_CLS = { visible: 'pub', pending: 'warn', hidden: 'off' };
 
 /* ============ 视图切换 ============ */
-const VIEW_TITLE = { content: '内容管理', comments: '评论管理', links: '网上邻居', settings: '设置' };
+const VIEW_TITLE = { content: '内容管理', comments: '评论管理', visits: '访客记录', links: '网上邻居', settings: '设置' };
 function switchView(view) {
   if (!VIEW_TITLE[view]) view = 'content';
   $('#viewContent').hidden = view !== 'content';
   $('#viewComments').hidden = view !== 'comments';
+  $('#viewVisits').hidden = view !== 'visits';
   $('#viewLinks').hidden = view !== 'links';
   $('#viewSettings').hidden = view !== 'settings';
   $$('.adm-nav-item[data-view]').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
   $('#pageTitle').textContent = VIEW_TITLE[view];
   document.title = `${VIEW_TITLE[view]} · 朝夕光年后台`;
   if (view === 'comments') loadComments();
+  if (view === 'visits') loadVisits();
   if (view === 'links') loadLinks();
   // 注意：进设置视图时不重填表单。切走再切回就把半截昵称/签名冲掉，等于"隐式丢弃输入"；
   // 值已经在 input 里，保持原样才对，换过的图也一样留在 settings 草稿里等保存。
@@ -219,6 +231,260 @@ $('#cmtFilter').addEventListener('click', (e) => {
   cmtFilter = tab.dataset.status; loadComments();
 });
 
+/* ============ 访客记录 ============ */
+/* 绝对时间而不是 fmtTime 的"3小时前"：访问日志是拿来对账的，
+ * "昨天"这种相对说法在跨天翻页时会自相矛盾，必须落到 月-日 时:分。 */
+function fmtAbs(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function fmtClock(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+const p2 = (n) => String(n).padStart(2, '0');
+/* 同一天的"末次"只写时:分：整列只有 ~95px，"末次 10-26 09:39" 会被截成"末次 10-…" */
+function fmtLast(startIso, lastIso) {
+  const a = new Date(startIso), b = new Date(lastIso);
+  if (isNaN(a) || isNaN(b)) return fmtAbs(lastIso);
+  const sameDay = a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  return sameDay ? `${p2(b.getHours())}:${p2(b.getMinutes())}` : fmtAbs(lastIso);
+}
+function fmtDuration(ms) {
+  const s = Math.max(0, Math.round((Number(ms) || 0) / 1000));
+  if (s < 60) return `${s} 秒`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} 分 ${s % 60} 秒`;
+  const h = Math.floor(m / 60);
+  return `${h} 小时 ${m % 60} 分`;
+}
+/* 统计卡上的紧凑版：24px 字号下"22 分 30 秒"会顶破 160px 的卡宽 */
+function fmtDurShort(ms) {
+  const s = Math.max(0, Math.round((Number(ms) || 0) / 1000));
+  if (s < 60) return `${s}秒`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}分${s % 60 ? (s % 60) + '秒' : ''}`;
+  return `${Math.floor(m / 60)}时${m % 60}分`;
+}
+
+function visitUrl() {
+  const p = new URLSearchParams();
+  p.set('range', visitRange);
+  p.set('limit', '20');
+  p.set('page', String(visitPage));
+  if (visitQ) p.set('q', visitQ);
+  if (visitHideAdmin) p.set('hideAdmin', '1');
+  return '/api/visits?' + p.toString();
+}
+
+async function loadVisits() {
+  try {
+    const [st, data] = await Promise.all([api('/api/visits/stats'), api(visitUrl())]);
+    visitLabels = data.labels || visitLabels;
+    renderVisitStats(st);
+    renderVisitTable(data);
+    $('#visitNote').textContent = `记录内容：IP、省市归属、设备与浏览器、进入/离开时间、停留时长与行为动作（浏览、阅读、点赞、评论、看大图、点友链、翻页）。`
+      + `自动保留最近 ${data.retention.days} 天，超出后由服务端滚动清理；标为「我自己」的是你登录后在前台产生的访问，可用上方开关隐藏。`;
+  } catch (e) {
+    $('#visitTbody').innerHTML = `<tr><td colspan="7"><div class="adm-empty">加载失败：${esc(e.message)}</div></td></tr>`;
+  }
+}
+
+function renderVisitStats(st) {
+  /* 四张卡并排时每张只有 ~210px、文字列 ~115px，副行必须短：
+   * 写"7 个 IP · 26 次浏览"会被省略号吃掉后半，等于没写。 */
+  const cards = [
+    { num: st.sessions.today, lbl: '今日访问', sub: `IP ${st.ips.today} · PV ${st.pvToday}`, cls: 'blue',
+      icon: '<path d="M12 5c-4.4 0-8.2 2.7-9.5 6C3.8 14.3 7.6 17 12 17s8.2-2.7 9.5-6C20.2 7.7 16.4 5 12 5zm0 9.6a3.6 3.6 0 1 1 0-7.2 3.6 3.6 0 0 1 0 7.2z"/>' },
+    { num: st.online, lbl: '正在浏览', sub: '2 分钟内有心跳', cls: 'green',
+      icon: '<path d="M13 2 4.5 13.5H11l-1 8.5 8.5-11.5H12z"/>' },
+    { num: fmtDurShort(st.avgDuration.today), lbl: '今日平均停留', sub: `7 天 ${fmtDurShort(st.avgDuration.week)}`, sm: true, cls: 'orange',
+      icon: '<path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 10.6V6h-2v7.4l5.2 3.1 1-1.7z"/>' },
+    { num: st.sessions.week, lbl: '近 7 天访问', sub: `IP ${st.ips.week} · 30 天 ${st.sessions.month}`, cls: 'purple',
+      icon: '<path d="M4 5h16v3H4zm0 5.5h16V22H4zM7 9h2v2H7zm4 0h2v2h-2zm-4 4h2v2H7zm4 0h2v2h-2zm-4 4h2v2H7z"/>' },
+  ];
+  $('#visitStats').innerHTML = cards.map((c) => `
+    <div class="adm-stat"><div class="ico ${c.cls}"><svg viewBox="0 0 24 24">${c.icon}</svg></div>
+      <div><div class="num${c.sm ? ' sm' : ''}">${c.num}</div><div class="lbl">${c.lbl}</div><div class="sub">${c.sub}</div></div></div>`).join('');
+  // 侧栏徽章只做一件事：告诉后台"此刻有人在读"，所以是绿色的在线数而不是待办数
+  const b = $('#navVisitBadge');
+  visitOnline = st.online;
+  if (st.online > 0) { b.textContent = st.online > 99 ? '99+' : st.online; b.classList.add('live'); b.style.display = 'inline-flex'; }
+  else { b.style.display = 'none'; }
+}
+
+function geoCell(s) {
+  const geo = s.geo_label || '<span class="v-unknown">归属地未知</span>';
+  const tag = s.bot ? '<span class="adm-badge off">机器人</span>'
+    : s.admin ? '<span class="adm-badge warn">我自己</span>' : '';
+  const isp = s.geo_isp ? `<div class="loc">${esc(s.geo_isp)}</div>` : '';
+  // 列宽被 colgroup 钉死后长 IP（尤其 IPv6）会省略号，完整值必须能从 title 拿到
+  return `<div class="v-ip mono" title="${esc(s.ip || '')}">${esc(s.ip || '未知')}${tag}</div>`
+    + `<div class="v-geo" title="${esc(s.geo_label || '')}">${geo}</div>${isp}`;
+}
+
+function deviceCell(s) {
+  const line = `${s.device || '其它'} · ${s.browser || '未知'}`;
+  // 来源单独一行：和 iOS 挤在同一行时，"iOS 来自 mp.weixin.qq.com" 必然被省略号截成半截域名
+  const ref = s.referrer ? `<div class="loc v-ref" title="${esc(s.referrer)}">来自 ${esc(hostOf(s.referrer))}</div>` : '';
+  return `<div title="${esc(line)} / ${esc(s.os || '')}">${esc(line)}</div><div class="loc">${esc(s.os || '')}</div>${ref}`;
+}
+function hostOf(u) {
+  try { return new URL(u).host; } catch (e) { return String(u).slice(0, 24); }
+}
+
+function renderVisitTable(data) {
+  const tb = $('#visitTbody');
+  visitRows = data.sessions;
+  visitSelected.clear();
+  $('#visitSelCount').textContent = '0';
+  $('#btnVisitBatchDel').style.display = 'none';
+  $('#visitCheckAll').checked = false;
+  $('#visitCount').textContent = `共 ${data.total} 次访问 · 第 ${data.page}/${data.pages} 页`;
+  if (!visitRows.length) {
+    tb.innerHTML = '<tr><td colspan="7"><div class="adm-empty">这个时间窗内还没有访问记录</div></td></tr>';
+    $('#visitPager').innerHTML = '';
+    return;
+  }
+  const online = (s) => Date.now() - (Date.parse(s.last_seen || s.started_at) || 0) < 120 * 1000;
+  tb.innerHTML = visitRows.map((s) => `<tr data-sid="${esc(s.id)}">
+    <td class="chk-col"><input type="checkbox" class="visit-check"></td>
+    <td>${geoCell(s)}</td>
+    <td>${deviceCell(s)}</td>
+    <td class="c-time hide-sm">${fmtAbs(s.started_at)}<div class="loc" title="末次活动 ${fmtAbs(s.last_seen)}">末次 ${fmtLast(s.started_at, s.last_seen)}</div></td>
+    <td><span class="v-dur${online(s) ? ' live' : ''}">${fmtDuration(s.duration_ms)}</span>${online(s) ? '<span class="v-live-dot" title="2 分钟内还有心跳"></span>' : ''}</td>
+    <td class="hide-sm">${visitActsCell(s)}</td>
+    <td style="text-align:right"><span class="adm-act" data-op="toggle">明细</span><span class="adm-act danger" data-op="del">删除</span></td>
+  </tr>`).join('');
+  renderVisitPager(data);
+}
+
+/* 动作总数 + 读到过几条正文。窄屏这一列会随 .hide-sm 隐藏，所以信息丢了不影响主判读 */
+function visitActsCell(s) {
+  const acts = Number(s.event_count) || 0;
+  const reads = Number(s.read_count) || 0;
+  return `<div>${acts} 次</div><div class="loc">${reads ? `读 ${reads} 条` : '未读到正文'}</div>`;
+}
+
+function renderVisitPager(data) {
+  const box = $('#visitPager');
+  if (data.pages <= 1) { box.innerHTML = ''; return; }
+  box.innerHTML = `<button class="adm-btn" data-pg="${data.page - 1}"${data.page <= 1 ? ' disabled' : ''}>上一页</button>`
+    + `<span class="v-pg-cur">${data.page} / ${data.pages}</span>`
+    + `<button class="adm-btn" data-pg="${data.page + 1}"${data.page >= data.pages ? ' disabled' : ''}>下一页</button>`;
+}
+
+$('#visitPager').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-pg]');
+  if (!btn || btn.disabled) return;
+  visitPage = Number(btn.dataset.pg);
+  loadVisits();
+});
+
+/* 时间线：一条会话的全部动作。事件已随列表一起返回，展开不再发请求。 */
+function timelineHtml(s) {
+  const list = s.event_list || [];
+  const head = `<div class="v-tl-head">
+     <b>${esc(s.ip || '未知')}</b> · ${esc(s.geo_label || '归属地未知')} · ${esc(s.device)} ${esc(s.browser)} ${esc(s.os)}
+     <span class="sub">进入 ${fmtAbs(s.started_at)} · 停留 ${fmtDuration(s.duration_ms)} · 浏览 ${s.pv || 0} 次</span>
+   </div>`;
+  const uaLine = `<div class="v-tl-ua" title="原始 User-Agent：${esc(s.ua || '')}">${esc(s.ua || '')}</div>`;
+  if (!list.length) return head + '<div class="v-tl-empty">这次访问没有采集到行为动作（可能只是打开就走，或浏览器拦截了上报）</div>' + uaLine;
+  const over = (Number(s.event_count) || 0) - list.length;
+  const items = list.map((e) => `<li><span class="t">${fmtClock(e.created_at)}</span>`
+    + `<span class="k">${esc(visitLabels[e.type] || e.type)}</span>`
+    + `<span class="d" title="${esc((e.detail || '') + (e.target ? ' · ' + e.target : ''))}">${esc(e.detail || '')}</span></li>`).join('');
+  return head + `<ul class="v-tl">${items}${over > 0 ? `<li class="more">另有 ${over} 条动作未显示（单会话展示上限按页拉取）</li>` : ''}</ul>`
+    + `<div class="v-tl-ua" title="${esc(s.ua || '')}">${esc(s.ua || '')}</div>`;
+}
+
+$('#visitTbody').addEventListener('change', (e) => {
+  if (!e.target.classList.contains('visit-check')) return;
+  const sid = e.target.closest('tr[data-sid]').dataset.sid;
+  if (e.target.checked) visitSelected.add(sid); else visitSelected.delete(sid);
+  $('#visitSelCount').textContent = visitSelected.size;
+  $('#btnVisitBatchDel').style.display = visitSelected.size > 0 ? 'inline-flex' : 'none';
+});
+$('#visitCheckAll').addEventListener('change', (e) => {
+  $$('#visitTbody .visit-check').forEach((cb) => {
+    cb.checked = e.target.checked;
+    const sid = cb.closest('tr[data-sid]').dataset.sid;
+    if (e.target.checked) visitSelected.add(sid); else visitSelected.delete(sid);
+  });
+  $('#visitSelCount').textContent = visitSelected.size;
+  $('#btnVisitBatchDel').style.display = visitSelected.size > 0 ? 'inline-flex' : 'none';
+});
+
+$('#visitTbody').addEventListener('click', async (e) => {
+  const row = e.target.closest('tr[data-sid]');
+  if (!row) return;
+  const sid = row.dataset.sid;
+  const s = visitRows.find((x) => x.id === sid);
+  if (!s) return;
+  const op = e.target.closest('.adm-act');
+  if (op && op.dataset.op === 'del') {
+    e.stopPropagation();
+    const ok = await confirmDlg('删除这次访问记录及其全部行为动作？', '删除');
+    if (!ok) return;
+    try { await api('/api/visits/batch-delete', { method: 'POST', body: { ids: [sid] } }); await loadVisits(); }
+    catch (err) { alertDlg(err.message); }
+    return;
+  }
+  if (op && op.dataset.op === 'toggle') { e.stopPropagation(); toggleTimeline(row, s); op.textContent = row.classList.contains('open') ? '收起' : '明细'; return; }
+  if (op) return; // 复选框等其它控件走各自的 change，不该顺手展开
+  // 点行本体也展开/收起（与内容管理"点行进编辑"的手感一致）
+  toggleTimeline(row, s);
+  const act = row.querySelector('.adm-act[data-op="toggle"]');
+  if (act) act.textContent = row.classList.contains('open') ? '收起' : '明细';
+});
+
+/* 展开行是插在数据行之后的兄弟节点。一次只展开一条（否则表格会被撑成一长串看不完），
+ * 展开态挂在数据行的 .open 上，由调用方据此改"明细/收起"的文案。 */
+function toggleTimeline(row, s) {
+  const next = row.nextElementSibling;
+  if (next && next.classList.contains('v-detail')) {
+    next.remove();
+    row.classList.remove('open');
+    return;
+  }
+  $$('#visitTbody tr.v-detail').forEach((tr) => tr.remove());
+  $$('#visitTbody tr.open').forEach((tr) => tr.classList.remove('open'));
+  const tr = document.createElement('tr');
+  tr.className = 'v-detail';
+  tr.innerHTML = `<td colspan="7">${timelineHtml(s)}</td>`;
+  row.after(tr);
+  row.classList.add('open');
+}
+
+$('#btnVisitBatchDel').addEventListener('click', async () => {
+  if (!visitSelected.size) return;
+  const ok = await confirmDlg(`确定删除选中的 ${visitSelected.size} 次访问记录及其行为动作吗？`, '批量删除');
+  if (!ok) return;
+  try { await api('/api/visits/batch-delete', { method: 'POST', body: { ids: [...visitSelected] } }); await loadVisits(); }
+  catch (e) { alertDlg(e.message); }
+});
+
+$('#visitRange').addEventListener('click', (e) => {
+  const tab = e.target.closest('.adm-tab'); if (!tab) return;
+  $$('.adm-tab', $('#visitRange')).forEach((t) => t.classList.toggle('active', t === tab));
+  visitRange = tab.dataset.range; visitPage = 1; loadVisits();
+});
+
+/* 搜索框输入即查：300ms 静默期，边打字边发请求会把后台打成一串查询 */
+let visitQTimer = null;
+$('#visitQ').addEventListener('input', (e) => {
+  clearTimeout(visitQTimer);
+  const v = e.target.value.trim();
+  visitQTimer = setTimeout(() => { visitQ = v; visitPage = 1; loadVisits(); }, 300);
+});
+$('#visitHideAdmin').addEventListener('change', (e) => {
+  visitHideAdmin = e.target.checked; visitPage = 1; loadVisits();
+});
+
 /* ============ 网上邻居 ============ */
 async function loadLinks() {
   try {
@@ -319,6 +585,14 @@ async function poll() {
     }
     lastCmtTotal = stats.total;
     if (!$('#viewComments').hidden) { const list = await api(`/api/comments?status=${cmtFilter}&limit=100`); renderCmtStats(stats); renderCmtTable(list); }
+    /* 访客视图开着就顺带刷新（含正在浏览的人数）。
+     * 不弹 toast："有人来了"不是需要处理的告警，一天几十次会把提示刷成噪音。
+     * 只重建统计卡与侧栏在线数，不重建表格——否则正要点展开的行会被换掉，勾选也会丢。 */
+    if (!$('#viewVisits').hidden) {
+      const vst = await api('/api/visits/stats');
+      renderVisitStats(vst);
+      if (visitOnline !== vst.online) { visitOnline = vst.online; loadVisits(); }
+    }
   } catch (e) { /* 静默 */ }
 }
 function startPolling() { if (pollTimer) clearInterval(pollTimer); pollTimer = setInterval(poll, 25000); }

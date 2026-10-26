@@ -95,6 +95,9 @@
 </div>
 
 <script src="/js/common.js"></script>
+<!-- track.js 夹在 common 与 feed 之间：它要覆写 common.js 的全局 api()，
+     而 feed.js 一加载就会发起请求，晚一步装钩子就漏掉首屏那几次动作。 -->
+<script src="/js/track.js"></script>
 <!-- snow.js 必须在 feed.js 之前：feed.js 读到设置后直接调 window.Snow.setEnabled -->
 <script src="/js/snow.js"></script>
 <script src="/js/feed.js"></script>

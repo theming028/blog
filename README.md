@@ -13,8 +13,8 @@ PORT=3000 HOST=127.0.0.1 node server.js
 
 | 路由 | 说明 |
 | --- | --- |
-| `/` | 信息流（点赞、评论、回复、大图查看、分页、友链） |
-| `/admin` | 后台：内容 / 评论审核 / 友链 / 外观设置 |
+| `/` | 信息流（点赞、评论、回复、大图查看、分页、友链、飘雪） |
+| `/admin` | 后台：内容 / 评论审核 / 访客记录 / 友链 / 设置 |
 | `/edit` | 发布与编辑 |
 | `/login` | 后台登录 |
 
@@ -53,6 +53,73 @@ node -e "console.log(require('crypto').createHash('sha256').update('tm-blog-salt
   `ali-swift-real-client-ip` / `x-real-ip` / `cf-connecting-ip` → `x-forwarded-for` 首段 → socket，
   每段都过 `net.isIP`；并按**不可伪造的 socket IP** 节流（60 秒 20 次）。云端计数缓存 60 秒，
   兜底查询恒带 `limit=1`，绝不做全表拉取。CDN 后可能因共享出口 IP 而少计。
+
+## 访客记录
+
+后台「访客记录」= **会话表 + 行为流水**，采集端 `public/js/track.js`，服务端 `lib/visit.js`，
+IP 归属地 `lib/geoip.js`。记录 IP、省市、设备/浏览器、进入与末次时间、停留时长、行为动作。
+
+**这是一次有意的隐私口径转向**：原先只存 `sha256(盐+IP)` 的独立访客数（见上一节「访客计数」，
+页脚那行仍按老口径走，两者互不影响），现在**原始 IP 明文入库**、后台可见。数据只存在自己的库里、
+只有登录后的后台能读，但请把它当成"你在收集访客地理位置"来对待。
+
+- **时长由服务端累计，不信客户端秒数**：前端每 30 秒 ping 一次，服务端给 `now - last_seen` 记账，
+  单次上限 90 秒（后台标签页的定时器会被浏览器节流到分钟级，不设上限会漏算，设了也没法伪造）。
+  页面切到后台时前端停止心跳，切回来先补一次 `sync`（只拨时钟、不计入），否则"合上电脑十分钟再打开"
+  会被算成十分钟浏览。
+- **sid 由服务端签发**：客户端带的 sid 只是"想接着这个会话记"的凭据。认得、且归属同一
+  `visitor_hash`、且 30 分钟内活跃过才复用，否则另发一个——否则谁都能猜个 sid 把动作记到别人头上。
+- **公开写端点全限流 + 白名单**：`start` 每分钟 20 次、`ping`/`event` 合计每分钟 90 次（按不可伪造的
+  socket IP），动作类型走 `EVENT_LABEL` 白名单（`pv/post_read/like/unlike/comment/cmt_edit/cmt_del/image_view/blogroll_click/page_turn`），
+  `target` 截 64 字、`detail` 截 200 字，单会话动作上限 500 条。
+- **留存**：默认 90 天滚动 + 会话 2 万 / 动作 5 万行上限，启动时清一次、之后每 6 小时一次
+  （`lib/visit.js` 顶部三个常量可改）。后台另有单条与批量删除。
+- **归属地**：只在**新建会话**时查，结果按 IP 落库缓存 30 天，失败负缓存 1 小时，连续失败 3 次熔断 10 分钟；
+  查询异步补写、不挡首屏；查不到就显示"未知"，绝不因此丢记录。内网/回环 IP 不查。
+  - ⚠️ **会把访客 IP 交给第三方接口**（默认 ip-api.com 免费版，仅 http）。不想外发就设
+    `GEOIP_OFF=1`；也可用 `GEOIP_ENDPOINT` 换成自建服务（模板含 `{ip}` 占位）。
+  - CDN/代理后拿到的是出口 IP，省市可能只精确到机房。
+- **track.js 不往 feed.js 里插任何调用**（两个设备并行改 feed.js 时最容易冲突），只用三个对外面：
+  覆写 `common.js` 的全局 `api()`（只记**成功**的动作）、观察 `#viewer` 的 class 变化与 `#feed` 的节点变化、
+  友链/页码的委托点击。**若 feed.js 将来改成 ES module，`api` 不再是可覆写的 global，第 1 条会静默失效**，
+  届时把 `installApiHook()` 换成显式调用点。
+- **管理员自己在前台的访问会被标 `admin`**，后台可勾「隐藏我自己」过滤；`bot`（UA 命中爬虫特征）同理打标，
+  且机器人不做在线归属地查询。
+- 表格用 `table-layout: fixed` + `colgroup` 钉死列宽：展开行的 UA / 动作明细都是不换行长文本，
+  自动布局会把表的 min-content 撑宽、超出面板后被 `.adm-panel` 的 `overflow:hidden` 裁掉，
+  症状是"明细列凭空消失"。窄屏隐藏"进入时间"列后 `col` 会整体左移一位，媒体查询里按 5 列重排过。
+
+**云端建表**（发布前先执行）：
+
+```sql
+CREATE TABLE IF NOT EXISTS visit_sessions (
+  id text PRIMARY KEY, visitor_hash text, ip text,
+  geo_label text, geo_country text, geo_region text, geo_city text, geo_isp text,
+  ua text, device text, browser text, os text,
+  bot boolean NOT NULL DEFAULT false, admin boolean NOT NULL DEFAULT false,
+  referrer text, page text,
+  started_at timestamptz NOT NULL DEFAULT now(), last_seen timestamptz,
+  duration_ms bigint NOT NULL DEFAULT 0, pv integer NOT NULL DEFAULT 0,
+  event_count integer NOT NULL DEFAULT 0, ended boolean NOT NULL DEFAULT false);
+CREATE INDEX IF NOT EXISTS vs_started_idx ON visit_sessions (started_at DESC);
+CREATE INDEX IF NOT EXISTS vs_last_seen_idx ON visit_sessions (last_seen DESC);
+CREATE INDEX IF NOT EXISTS vs_ip_idx ON visit_sessions (ip);
+
+CREATE TABLE IF NOT EXISTS visit_events (
+  id text PRIMARY KEY, session_id text NOT NULL, visitor_hash text, ip text,
+  type text NOT NULL, target text, detail text,
+  created_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS ve_session_idx ON visit_events (session_id, created_at);
+CREATE INDEX IF NOT EXISTS ve_created_idx ON visit_events (created_at);
+
+-- 未命中时 value 存 {"miss": true} 哨兵：jsonb 里的 SQL NULL 和本地 null 回读时区分不开
+CREATE TABLE IF NOT EXISTS ip_geo_cache (
+  ip text PRIMARY KEY, value jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now());
+```
+
+三张表都以 text 主键 + 客户端生成的 id 落地（与 `images` 同一做法），批量删与按 offset 裁剪才不需要 RPC。
+`visit_sessions` 的列名改动要同步 `lib/store.js` 的 `SESSION_COLS` 白名单——PostgREST 遇到未知列是把整条
+PATCH 打回 400，而不是忽略那一列。
 
 ## 音视频
 
@@ -98,7 +165,8 @@ UPDATE posts SET media = '[]'::jsonb WHERE media IS NULL;
 QW Pages（动态页）：`category: "dynamic"`、`entrypoint: "server.js"`、`port: 8081`、`with_database: true`，先 provision 再建表。
 同一项目重复发布会发到**同一域名并递增版本号**，不会新开站点。
 
-建表需覆盖 **7 张表**：`posts / comments / likes / images / settings / links / visitors`。
+建表需覆盖 **10 张表**：`posts / comments / likes / images / settings / links / visitors`
++ 访客记录的 `visit_sessions / visit_events / ip_geo_cache`（DDL 见上文「访客记录」）。
 注意 `createPost`/`addComment`/`addLike`/`createLink` **不下发 `id`**，评论/点赞/友链也不下发 `created_at`，
 所以这些列必须有数据库默认值，否则写入直接失败；`visitors` 以 `hash` 作主键，重复上报靠
 `Prefer: resolution=ignore-duplicates` 去重。

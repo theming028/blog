@@ -52,7 +52,10 @@ svg { display: block; }
 .adm-side-foot { padding: 12px; border-top: 1px solid var(--adm-border); }
 .adm-side-foot .adm-nav-item { margin-bottom: 0; }
 
-.adm-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+/* container-type 让子树里的 @container 查询能看到内容区的真实宽度（视口查询在这里不准：
+   侧栏固定占 224px，同一视口下内容区可宽可窄）。
+   它顺带产生 layout containment —— 弹窗遮罩与 toast 都挂在 .adm 之外，不受影响。 */
+.adm-main { flex: 1; min-width: 0; display: flex; flex-direction: column; container-type: inline-size; }
 .adm-top {
   height: 60px; background: var(--adm-card); border-bottom: 1px solid var(--adm-border);
   display: flex; align-items: center; justify-content: space-between; padding: 0 24px;
@@ -61,8 +64,15 @@ svg { display: block; }
 .adm-top h1 { font-size: 18px; font-weight: 600; }
 .adm-top-actions { display: flex; align-items: center; gap: 10px; }
 /* 后台内容区收窄到 50% 并居中（box-sizing:border-box，50% 已含 24px 内距）。
-   注意：auto 边距是在侧栏之外的剩余空间里居中，不是整页几何居中。 */
-.adm-body { padding: 24px; width: 50%; margin: 0 auto; }
+   注意：auto 边距是在侧栏之外的剩余空间里居中，不是整页几何居中。
+   min-width 兜住低分辨率：1440 屏上 50% 只有 608px，七列表格会被压到每列 70–90px，
+   "平板 · Safari""10 次 · 读 5 条"全竖排换行。取 min(900px, 100%) 而不是写死 900px，
+   是为了让"剩余空间不足 900"的窗口（约 1120px 以下）直接铺满而不是撑出横向滚动条。
+   max-width:100% 是配套的必需项：.adm-body 是 .adm-main（column flex）的交叉轴子项，
+   默认会被内容 min-content 顶大——表格 min-content 约 759px，于是 900 宽的窗口下整块内容
+   溢出到 809px、把页面顶出横向滚动条（改动前后都存在的老问题）。
+   封顶之后溢出被留在 .adm-panel 内部，由它的 overflow-x:auto 接管。 */
+.adm-body { padding: 24px; width: 50%; min-width: min(900px, 100%); max-width: 100%; margin: 0 auto; }
 .adm-user { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--adm-muted); }
 .adm-user .avatar { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; background: #E5E7EB; }
 
@@ -83,19 +93,31 @@ svg { display: block; }
 .adm-btn svg { width: 16px; height: 16px; fill: currentColor; }
 
 /* ---------- 统计卡 ---------- */
-.adm-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+/* minmax(0,1fr) 而不是 1fr：1fr 的自动最小值是 min-content，
+ * 卡里的标签/副行都是 nowrap，四张卡会顶破容器（实测 960 屏整排溢出 95px）。
+ * 收成 0 之后长文本走省略号，宽度才真正等分。 */
+.adm-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 20px; }
 .adm-stat { background: var(--adm-card); border: 1px solid var(--adm-border); border-radius: 12px; padding: 18px 20px; display: flex; align-items: center; gap: 14px; }
 .adm-stat .ico { width: 42px; height: 42px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex: none; }
 .adm-stat .ico svg { width: 22px; height: 22px; }
+/* 文字列要能收缩：没有 min-width:0 时 flex 子项不肯缩到内容宽度以下，
+   长标签会把卡片撑成一列一个字（访客记录的统计卡就这么翻过车）。
+   直接打在 > div 上，三处统计卡渲染器都不用改结构 */
+.adm-stat > div { min-width: 0; }
 .adm-stat .num { font-size: 24px; font-weight: 700; line-height: 1.1; }
-.adm-stat .lbl { font-size: 13px; color: var(--adm-muted); margin-top: 2px; }
+.adm-stat .num.sm { font-size: 19px; letter-spacing: -.2px; }
+.adm-stat .lbl { font-size: 13px; color: var(--adm-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.adm-stat .sub { font-size: 11px; color: #A2A7AE; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ico.blue { background: var(--adm-accent-weak); } .ico.blue svg { fill: var(--adm-accent); }
 .ico.green { background: #E7F6EE; } .ico.green svg { fill: var(--adm-green); }
 .ico.orange { background: #FDF1E3; } .ico.orange svg { fill: var(--adm-orange); }
 .ico.purple { background: #EFEFFA; } .ico.purple svg { fill: #6B5BC7; }
 
 /* ---------- 面板 + 表格 ---------- */
-.adm-panel { background: var(--adm-card); border: 1px solid var(--adm-border); border-radius: 12px; overflow: hidden; }
+/* overflow-x 用 auto 而不是 hidden：内容/评论两张表在 1000px 以下的视口里
+   min-content 就比面板宽（实测 820 屏溢出 213px），hidden 会把最右边的"操作"列整个裁掉、
+   滚不到也点不到。改成 auto 之后窄屏可以横向拖动，宽屏不出滚动条，外观不变。 */
+.adm-panel { background: var(--adm-card); border: 1px solid var(--adm-border); border-radius: 12px; overflow-x: auto; }
 .adm-panel-head { padding: 15px 20px; border-bottom: 1px solid var(--adm-border); display: flex; align-items: center; justify-content: space-between; }
 .adm-panel-head b { font-size: 15px; font-weight: 600; }
 .adm-panel-head .sub { font-size: 12px; color: var(--adm-muted); margin-left: 8px; font-weight: 400; }
@@ -138,6 +160,84 @@ svg { display: block; }
 .c-site { font-size: 12px; margin-top: 3px; }
 .c-site a { color: var(--adm-accent); text-decoration: none; }
 .c-site a:hover { text-decoration: underline; }
+
+/* ---------- 访客记录 ---------- */
+/* 在线数是"此刻有人在读"，不是待办，所以用绿色而不是待审核那种红点 */
+.adm-nav-badge.live { background: var(--adm-green); }
+.adm-visit-head { flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+.adm-visit-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+/* 两个类一起写：.adm-input 在本文件更靠后，单写 .adm-visit-q 会被它的 width:100% 顶掉
+   （实测搜索框会撑满整行，把"隐藏我自己"挤到下一行） */
+.adm-input.adm-visit-q { width: 190px; height: 32px; padding: 0 10px; font-size: 13px; }
+.adm-check { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: var(--adm-muted); cursor: pointer; white-space: nowrap; }
+.adm-check input { width: 15px; height: 15px; accent-color: var(--adm-accent); cursor: pointer; }
+/* 后台内容区是 50% 宽（见上方 .adm-body），访客表 7 列已经贴到边界。
+   必须 table-layout:fixed + colgroup 把列宽钉死：否则展开行里那条不换行的 UA / 动作明细
+   会把整张表的 min-content 撑宽，超出面板后被 .adm-panel 的 overflow:hidden 裁掉——
+   症状是"行为 / 明细"两列凭空消失，看着像没渲染。超长内容一律省略号，完整值挂 title。 */
+.adm-visit-table { table-layout: fixed; font-size: 13px; }
+/* overflow:hidden 是必需的：fixed 布局下不换行的单元格内容（长 IP、"明细 删除"两个按钮）
+   会溢出到自己列宽之外，虽然被面板裁掉不影响看，但会让整页多出一条横向滚动条 */
+.adm-visit-table td, .adm-visit-table th { padding-left: 12px; padding-right: 12px; overflow: hidden; }
+.adm-visit-table .c-chk { width: 34px; }
+.adm-visit-table .c-geo { width: 21%; }
+.adm-visit-table .c-dev { width: 17%; }
+.adm-visit-table .c-time2 { width: 15%; }
+.adm-visit-table .c-dur { width: 13%; }
+.adm-visit-table .c-acts { width: 12%; }
+.adm-visit-table .c-op { width: 92px; }
+/* .loc 只在 .c-content 里有定义（12px 灰字），访客表的副行用的是裸 .loc，
+   不在这里补一条就会退回 13px 正文色，主副两行看不出层次 */
+.adm-visit-table .loc { font-size: 12px; color: var(--adm-muted); margin-top: 2px; }
+/* 列宽钉死之后，不换行的内容必须显式省略号，否则会把列撑破。
+   注意只能用 td:nth-child()：col.c-xxx 是 <col> 上的类，
+   写成 ".c-dur .loc" 这种后代选择器永远匹配不到单元格（第一版就这么哑掉的）。 */
+.adm-visit-table td:nth-child(3) > div, .adm-visit-table td:nth-child(4) .loc,
+.adm-visit-table td:nth-child(6) > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 窄屏会 display:none 掉"进入时间"与"行为"两列，col 是按位置映射的，
+   所以这里按"隐藏后剩下的 5 列"重排：第 4 个 col 落在"停留时长"、第 5 个落在"明细"。
+   不能退回 table-layout:auto——展开行的 UA / 动作明细是不换行长文本，
+   自动布局会被它们的 min-content 顶开，整张表横向溢出后再被面板裁掉。 */
+@media (max-width: 720px) {
+  .adm-visit-table .c-chk { width: 30px; }
+  .adm-visit-table .c-geo { width: 28%; }
+  .adm-visit-table .c-dev { width: 24%; }
+  .adm-visit-table .c-time2 { width: 22%; }
+  .adm-visit-table .c-dur { width: 88px; }
+  .adm-visit-table .c-acts, .adm-visit-table .c-op { width: auto; }
+  .adm-visit-table td:nth-child(3) > div, .adm-visit-table td:nth-child(4) .loc,
+  .adm-visit-table td:nth-child(6) > div { white-space: normal; }
+}
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+.v-ip { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v-ip .adm-badge { margin-left: 6px; vertical-align: 1px; }
+.v-geo { font-size: 12px; color: var(--adm-muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v-unknown { color: #B6BAC1; }
+.v-dur { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.v-dur.live { color: var(--adm-green); font-weight: 600; }
+/* 在线小圆点：单独一格太占地方，挂在时长右上角 */
+.v-live-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--adm-green); vertical-align: 6px; margin-left: 4px; animation: vPulse 1.8s ease-in-out infinite; }
+@keyframes vPulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .v-live-dot { animation: none; } }
+
+/* 展开的行为时间线：它是数据行的兄弟节点，不该继承"整行可点 + 悬停变色" */
+.adm-table tr.v-detail { cursor: default; }
+.adm-table tr.v-detail:hover td { background: #FBFCFD; }
+.adm-table tr.v-detail > td { padding: 0 16px 16px; background: #FBFCFD; }
+.v-tl-head { font-size: 13px; color: var(--adm-text); padding: 14px 0 10px; border-bottom: 1px solid var(--adm-line); }
+.v-tl-head .sub { color: var(--adm-muted); margin-left: 8px; font-size: 12px; }
+.v-tl { list-style: none; padding: 6px 0 0; max-height: 300px; overflow-y: auto; }
+.v-tl li { display: flex; align-items: baseline; gap: 12px; padding: 5px 0; font-size: 13px; border-bottom: 1px dashed #EFF1F3; }
+.v-tl li:last-child { border-bottom: 0; }
+.v-tl .t { color: var(--adm-muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; flex: none; }
+.v-tl .k { color: var(--adm-accent); flex: none; width: 88px; }
+.v-tl .d { color: var(--adm-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v-tl .more { color: var(--adm-muted); font-size: 12px; justify-content: center; }
+.v-tl-empty { padding: 14px 0; font-size: 13px; color: var(--adm-muted); }
+.v-tl-ua { margin-top: 10px; font-size: 11px; color: #B6BAC1; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adm-foot { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 14px 20px; border-top: 1px solid var(--adm-border); }
+.v-pg-cur { font-size: 13px; color: var(--adm-muted); }
+.adm-view .adm-note { margin: 14px 2px 0; }
 
 /* toast */
 .toast {
@@ -213,8 +313,11 @@ svg { display: block; }
 .adm-login-err { color: var(--adm-red); font-size: 13px; min-height: 18px; margin-top: 12px; text-align: center; }
 
 /* ---------- 响应式 ---------- */
+/* 统计卡按"内容区实际宽度"而不是视口宽度决定几列：
+   视口 1024 时侧栏已占掉 224px，内容区只有 800，四张卡各 176px、文字列只剩 ~80px，
+   副行全被省略号吃掉。用容器查询看 .adm-main 的宽度才准。 */
+@container (max-width: 900px) { .adm-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 900px) {
-  .adm-stats { grid-template-columns: repeat(2, 1fr); }
   .adm-photos { grid-template-columns: repeat(4, 1fr); }
   /* 900px 以下恢复整宽：侧栏占 224px 后，50% 只剩 250–340px，6 列表格不可用。
      想只在更宽的桌面才收窄，把 900 调大即可（1024 屏上 50% 也只有 400px）。 */
@@ -224,7 +327,6 @@ svg { display: block; }
   .adm-side { position: fixed; left: 0; top: 0; z-index: 50; transform: translateX(-100%); transition: transform .2s; box-shadow: 0 0 30px rgba(0,0,0,.15); }
   .adm-side.open { transform: translateX(0); }
   .adm-menu-btn { display: inline-flex !important; }
-  .adm-stats { grid-template-columns: repeat(2, 1fr); }
   .adm-table .hide-sm { display: none; }
 }
 .adm-menu-btn { display: none; width: 34px; height: 34px; border: 1px solid var(--adm-border); border-radius: 8px; background: #fff; align-items: center; justify-content: center; }

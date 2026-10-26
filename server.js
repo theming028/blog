@@ -13,6 +13,7 @@ const { makeStore } = require('./lib/store');
 const { seedIfEmpty } = require('./lib/seed');
 const { migrateSnapshotToCloud } = require('./lib/migrate');
 const { screenComment } = require('./lib/spam');
+const visit = require('./lib/visit');
 
 const COMMENT_MAX = 200; // 评论字数上限
 const POST_MAX = 5000;   // 正文长度上限，与发布页 textarea 的 maxlength 对齐
@@ -390,7 +391,12 @@ async function handleApi(req, res, pathname, query) {
     (isCommentModerate && method === 'PUT') ||
     (pathname === '/api/links' && method === 'POST') ||
     (pathname === '/api/links/batch-delete' && method === 'POST') ||
-    (isLinkItem && (method === 'PUT' || method === 'DELETE'));
+    (isLinkItem && (method === 'PUT' || method === 'DELETE')) ||
+    // 访客记录三条都要登录：里面是原始 IP 和省市，公开就等于把访客地理位置挂到公网上。
+    // 注意是逐条精确列，不要写成 /^\/api\/visits/ 前缀匹配——/api/track/* 也必须保持公开。
+    (pathname === '/api/visits' && method === 'GET') ||
+    (pathname === '/api/visits/stats' && method === 'GET') ||
+    (pathname === '/api/visits/batch-delete' && method === 'POST');
   const wantDrafts = pathname === '/api/posts' && method === 'GET' && query.get('drafts') === '1';
   if (!authed && (adminOnly || wantDrafts)) {
     return sendError(res, 401, '请先登录后台');
@@ -604,6 +610,46 @@ async function handleApi(req, res, pathname, query) {
     return sendJson(res, 200, { visitors: total });
   }
 
+  /* ---------- 访客访问记录 · 采集端（公开，由前台 track.js 上报） ----------
+   * 三个写端点都不需要登录，所以每个都在 lib/visit.js 里按 socket IP 限流，
+   * 并且只认服务端签发、且归属同一 visitor_hash 的 sid。
+   * 埋点包体很小（10 条动作也就 3KB 上下），这里把上限收到 60KB，
+   * 不给它一个"拿 20MB 图片上传额度来灌日志"的机会。 */
+  if (pathname.startsWith('/api/track/') && method === 'POST') {
+    if (pathname !== '/api/track/start' && pathname !== '/api/track/ping'
+      && pathname !== '/api/track/event' && pathname !== '/api/track/end') {
+      return sendError(res, 404, 'api not found');
+    }
+    let body;
+    try { body = await readBody(req, 0.06); } catch (e) { return sendError(res, 400, '上报数据不合法'); }
+    const ip = clientIp(req);
+    const ctx = {
+      ip,
+      sockIp: (req.socket && req.socket.remoteAddress) || 'unknown',
+      visitorHash: visitorHash(ip),
+      authed,
+      body,
+    };
+    if (pathname === '/api/track/start') return sendJson(res, 200, await visit.startSession(store, req, ctx));
+    if (pathname === '/api/track/ping') return sendJson(res, 200, await visit.pingSession(store, ctx));
+    if (pathname === '/api/track/event') return sendJson(res, 200, await visit.trackEvents(store, ctx));
+    return sendJson(res, 200, await visit.endSession(store, ctx));
+  }
+
+  /* ---------- 访客访问记录 · 后台查询（需登录） ---------- */
+  if (pathname === '/api/visits' && method === 'GET') {
+    return sendJson(res, 200, await visit.listVisits(store, query));
+  }
+  if (pathname === '/api/visits/stats' && method === 'GET') {
+    return sendJson(res, 200, await visit.visitStats(store));
+  }
+  if (pathname === '/api/visits/batch-delete' && method === 'POST') {
+    const b = await readBody(req);
+    const n = await visit.deleteVisits(store, b.ids);
+    if (!n) return sendError(res, 400, '未选择有效的访问记录');
+    return sendJson(res, 200, { ok: true, deleted: n });
+  }
+
   /* 只回白名单键：settings 里还有服务端自用的标记（如 _migrated），不能整包吐给浏览器 */
   const publicSettings = (s) => {
     const merged = { ...DEFAULT_SETTINGS, ...(s || {}) };
@@ -750,6 +796,20 @@ const server = http.createServer(async (req, res) => {
  * 评论/点赞之前，中途重启就会留下永久不完整的库。 */
 const MIGRATION_FLAG = '_migrated';
 
+/* 访问日志是滚动留存的（默认 90 天 + 两张表各自的行数上限，见 lib/visit.js）。
+ * 只在启动时清一次、之后每 6 小时一次；不做"每次写入顺手清"——
+ * 那会让流量最高的那台实例清得最勤，而本地是整表扫描。 */
+const PURGE_EVERY_MS = 6 * 3600 * 1000;
+async function purgeVisitsQuietly() {
+  try {
+    const r = await visit.purgeVisits(store);
+    if (r && (r.sessions || r.events)) console.log(`[visits] 滚动清理：会话 ${r.sessions} 条、动作 ${r.events} 条`);
+  } catch (e) {
+    // 清理失败只是数据多留一会儿，不该把访问带崩
+    console.warn('[visits] 滚动清理失败:', e.message);
+  }
+}
+
 async function bootstrap() {
   try {
     if (store.kind === 'supabase') {
@@ -775,6 +835,7 @@ async function bootstrap() {
       await seedIfEmpty(store, path.join(ROOT, 'assets', 'demo'));
       console.log('[seed] 已写入示例内容');
     }
+    await purgeVisitsQuietly();
   } catch (e) {
     console.error('[boot error]', e.message);
   }
@@ -785,4 +846,8 @@ server.listen(PORT, HOST, () => {
   console.log(`朋友圈风格个人博客已启动: http://localhost:${PORT}`);
   console.log(`管理后台: http://localhost:${PORT}/admin`);
   bootstrap(); // 不 await：端口先可用，导入在后台进行
+  // unref：这个定时器不该吊住进程，也不该被当成"还有活要干"
+  setInterval(purgeVisitsQuietly, PURGE_EVERY_MS).unref();
+  // 退出前把合并写入窗口里的访问日志落盘（本地 JSON 驱动才有；云端是逐条写入）
+  process.on('exit', () => { if (typeof store._flush === 'function') store._flush(); });
 });
