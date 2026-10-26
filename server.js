@@ -13,7 +13,6 @@ const { makeStore } = require('./lib/store');
 const { seedIfEmpty } = require('./lib/seed');
 const { migrateSnapshotToCloud } = require('./lib/migrate');
 const { screenComment } = require('./lib/spam');
-const share = require('./lib/share');
 const visit = require('./lib/visit');
 
 const COMMENT_MAX = 200; // 评论字数上限
@@ -316,33 +315,6 @@ function serveStatic(req, res, filePath) {
     .pipe(res);
 }
 
-/* 单条分享页：仍然吐 index.html，但把 head 里的 title / og:* 换成这条内容自己的。
- * 占位符缺失时退回注入到 </head> 之前，两处都没有就原样返回——
- * 分享 meta 是增强项，不该因为模板被改动能让首页变成 500。 */
-function serveShareHtml(req, res, post) {
-  let html;
-  try { html = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8'); }
-  catch (e) { res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8', ...SECURITY_HEADERS }); return res.end('Server Error'); }
-  const base = share.baseUrl(req);
-  const meta = share.headMeta(post, base);
-  /* 先摘掉模板里那句默认 title，再把 meta 块插进占位符：两个 <title> 并存时浏览器取第一个，
-     注入就等于没注入。占位符和 </head> 都找不到时原样返回（title 保留）。 */
-  let out = html.replace(/[ \t]*<title>[\s\S]*?<\/title>\r?\n?/i, '');
-  if (out.includes('<!--SHARE-META-->')) out = out.replace('<!--SHARE-META-->', meta + '\n');
-  else if (/<\/head>/i.test(out)) out = out.replace(/<\/head>/i, meta + '\n</head>');
-  else out = html;
-  const body = Buffer.from(out, 'utf8');
-  res.writeHead(200, {
-    'Content-Type': 'text/html; charset=utf-8',
-    // 每条内容的 meta 不同，且地址带查询参数，绝不能被按 URL 之外的键缓存
-    'Cache-Control': 'no-cache',
-    'Content-Length': body.length,
-    ...SECURITY_HEADERS,
-  });
-  if (req.method === 'HEAD') return res.end();
-  return res.end(body);
-}
-
 /* Secure 判定要三层兜底。实测 Page 运行时（函数计算）不透传 x-forwarded-proto，
  * 只看它会让线上会话 cookie 丢掉 Secure；只看 encrypted 又永远不成立（TLS 在网关终结）。
  * 因此再加"Host 不是本机/内网"这一条：发布出去的站点只有 https 入口。
@@ -481,8 +453,8 @@ async function handleApi(req, res, pathname, query) {
   m = pathname.match(/^\/api\/posts\/([\w-]+)$/);
   if (m && method === 'GET') {
     const post = await store.getPost(m[1]);
-    // 草稿对访客一律 404。分享功能给每条内容都配了可猜到的地址（?p=id），
-    // 而 id 会出现在 /api/posts 之外——没有这道判断，未发布的草稿就能被匿名读到。
+    // 草稿对访客一律 404：id 能从公开的 /api/posts 列表里拿到，
+    // 少了这道判断，只要知道 id 就能匿名读到未发布内容的正文与图片。
     if (!post || (post.status !== 'published' && !authed)) return sendError(res, 404, 'post not found');
     post.likes = await store.listLikes(m[1]);
     const allC = await store.listComments(m[1]);
@@ -780,7 +752,15 @@ const server = http.createServer(async (req, res) => {
   catch (e) { res.writeHead(400, SECURITY_HEADERS); return res.end('Bad Request'); }
   // 只解码 pathname：把整条 URL（含 ?drafts=1）一起解码会让 searchParams 解析不到参数，
   // 后台草稿列表因此永远拿不到 drafts=1（本地按 ?param 分栏、线上按 & 拼接，才没被发现）。
-  const pathname = decodeURIComponent(u.pathname);
+  // 必须包 try：decodeURIComponent 对畸形百分号（GET /%zz、/%E4%AD）会抛 URIError，
+  // 而这一行在下面的 try 之外——裸抛就是未捕获异常，整个 Node 进程直接退出。
+  // 实测一条 `curl /%zz` 就能让本地服务与线上容器同时挂掉（远程可复现的 DoS）。
+  let pathname;
+  try { pathname = decodeURIComponent(u.pathname); }
+  catch (e) {
+    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8', ...SECURITY_HEADERS });
+    return res.end('Bad Request');
+  }
 
   // Windows 下 \ 也是路径分隔符。new URL() 只规范化 / 形式的点段，%5c 要等
   // decodeURIComponent 之后才变成 \，所以必须在 join 之前拒掉，否则 ..\ 能跳出 web 根。
@@ -791,19 +771,6 @@ const server = http.createServer(async (req, res) => {
 
   try {
     if (pathname.startsWith('/api/')) return await handleApi(req, res, pathname, u.searchParams);
-    /* 单条内容的分享地址：/?p=post_xxx
-     * 放在静态文件之前、API 之后——它返回的还是首页文档，只是 head 里的元信息换成这条内容的。
-     * 抓链接的平台不执行 JS，所以这一步必须在服务端做（见 lib/share.js 的说明）。 */
-    if (pathname === '/' && u.searchParams.has('p') && (req.method === 'GET' || req.method === 'HEAD')) {
-      const id = String(u.searchParams.get('p') || '');
-      let post = null;
-      if (share.POST_ID_RE.test(id)) {
-        try { post = await store.getPost(id); } catch (e) { console.error('[share] 读取内容失败:', e.message); }
-        // 草稿的内容不能进 meta：分享链接会被各级缓存记下，删帖也收不回来
-        if (post && post.status !== 'published' && !isAdmin(req)) post = null;
-      }
-      return serveShareHtml(req, res, post);
-    }
   } catch (e) {
     /* 上游报错原文（含 Supabase 主机名与 /rest/v1/... 路径）只进服务端日志：
        直接吐给浏览器等于把内部拓扑和一句 SQL 错误细节公开出去，

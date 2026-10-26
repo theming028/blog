@@ -364,34 +364,6 @@ video.p-media-el { aspect-ratio: 16 / 10; object-fit: contain; }
    宽泛的子串匹配交给 common.js 带保护地移除 */
 #mulepage-footer, .mulepage-footer { display: none !important; }
 .loading { text-align: center; color: var(--wx-gray); font-size: 13px; padding: 40px 0; }
-/* ---------- 分享面板 ---------- */
-.dlg-share { width: 320px; text-align: left; }
-.dlg-title { padding: 20px 22px 12px; font-size: 15px; font-weight: 600; color: var(--wx-text); text-align: center; }
-.share-url { display: flex; gap: 8px; padding: 0 18px 12px; }
-.share-url input {
-  flex: 1; min-width: 0; height: 36px; padding: 0 10px; border: .5px solid var(--wx-line); border-radius: 6px;
-  background: var(--wx-box); color: var(--wx-text); font-size: 12px; font-family: inherit;
-}
-.share-url button {
-  flex: none; width: 60px; height: 36px; border: 0; border-radius: 6px;
-  background: var(--wx-blue); color: #fff; font-size: 13px; font-family: inherit; cursor: pointer;
-}
-.share-url button:disabled { opacity: .7; }
-.share-hint { padding: 0 20px 14px; font-size: 12px; line-height: 1.7; color: var(--wx-gray); }
-.share-native {
-  display: flex; align-items: center; justify-content: center; gap: 6px;
-  margin: 0 18px 16px; height: 38px; width: calc(100% - 36px);
-  border: .5px solid var(--wx-line); border-radius: 6px; background: #fff;
-  color: var(--wx-green); font-size: 14px; font-family: inherit; cursor: pointer;
-}
-.share-native svg { width: 17px; height: 17px; fill: currentColor; }
-.share-native:active { background: var(--wx-box); }
-
-/* ---------- 单条模式（分享直达地址）的返回入口 ---------- */
-.single-back { padding: 14px 24px 0; font-size: 13px; }
-.single-back a { color: var(--wx-blue); display: inline-flex; align-items: center; gap: 4px; }
-.single-back i { font-style: normal; }
-.single-back-link { color: var(--wx-blue); }
 
 .copyright { text-align: center; color: #B8B8B8; font-size: 12px; line-height: 1.8; padding: 20px 16px 6px; }
 /* 访客计数行：紧贴版权下方，同色同字号形成一组页脚信息。
@@ -404,6 +376,9 @@ video.p-media-el { aspect-ratio: 16 / 10; object-fit: contain; }
    网上邻居没有链接时会整块隐藏，所以分隔线挂在提醒上而不是挂在邻居上。 */
 .license { padding: 20px 24px 22px; background: var(--wx-bg); border-bottom: .5px solid var(--wx-line); }
 .license-text { font-size: 12px; line-height: 1.5; color: #8A9099; word-break: break-word; }
+/* 授权标识单独一行：条款正文是散文，混在末尾读起来像第四条条款。
+   全局 * { margin: 0 } 把 p 的默认间距清掉了，所以行距要显式给。 */
+.license-id { margin-top: 6px; }
 .blogroll { padding: 24px; background: var(--wx-bg); }
 .blogroll-title { font-size: 13px; color: #8A9099; margin-bottom: 12px; letter-spacing: .5px; text-align: center; }
 /* 这里是 flex 容器，光写 text-align 居中不了子项，必须 justify-content: center */

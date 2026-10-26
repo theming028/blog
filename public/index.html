@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>朝夕光年 · Ming的光影年华</title>
-<!--SHARE-META-->
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="/css/wx.css">
 </head>
@@ -38,6 +37,7 @@
        与网上邻居共用灰底页脚带，靠自身下边框分隔两者；内容不依赖接口，始终显示。 -->
   <div class="license">
     <p class="license-text">Attribution: You must attribute the work in the manner specified by the author or licensor (but not in any way that suggests that they endorse you or your use of the work). Noncommercial: You may not use this work for commercial purposes. Share Alike: If you alter, transform, or build upon this work, you may distribute the resulting work only under the same or similar license to this one.</p>
+    <p class="license-text license-id">License: CC BY-NC-SA 4.0</p>
   </div>
 
   <!-- 网上邻居（友情链接） -->
@@ -101,26 +101,7 @@
   </div>
 </div>
 
-<!-- 分享面板：由 pop 气泡里的「分享」项打开 -->
-<div class="mask" id="dlgShare">
-  <div class="dlg dlg-share">
-    <div class="dlg-title">分享这条内容</div>
-    <div class="share-url">
-      <input id="shareUrl" type="text" readonly aria-label="分享链接">
-      <button id="btnCopyUrl" type="button">复制</button>
-    </div>
-    <div class="share-hint" id="shareHint"></div>
-    <button class="share-native" id="btnNativeShare" type="button" style="display:none">
-      <svg viewBox="0 0 24 24"><path d="M18 16a3 3 0 0 0-2.2 1L8.9 13a3 3 0 0 0 0-2l6.9-4A3 3 0 1 0 15 5a3 3 0 0 0 .1.7L8.2 9.6a3 3 0 1 0 0 4.8l6.9 3.9A3 3 0 1 0 18 16z"/></svg>
-      系统分享
-    </button>
-    <div class="dlg-btns"><button id="shareClose">关闭</button></div>
-  </div>
-</div>
-
 <script src="/js/common.js"></script>
-<!-- share.js 在 feed.js 之前：feed.js 的 pop 气泡会调 window.Share.open -->
-<script src="/js/share.js"></script>
 <!-- track.js 夹在 common 与 feed 之间：它要覆写 common.js 的全局 api()，
      而 feed.js 一加载就会发起请求，晚一步装钩子就漏掉首屏那几次动作。 -->
 <script src="/js/track.js"></script>

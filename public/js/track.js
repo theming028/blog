@@ -218,9 +218,6 @@
   }
 
   installApiHook();
-  /* 给同页其它模块一个显式记动作的口子（share.js 记"打开分享/复制链接"）。
-   * 走的是同一个队列与同一套服务端白名单，不另开一条上报链路。 */
-  window.TMTrack = { event: track };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
 })();
