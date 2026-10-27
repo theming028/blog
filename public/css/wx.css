@@ -2,7 +2,9 @@
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html { -webkit-text-size-adjust: 100%; }
 body {
-  background: var(--wx-bg);
+  /* 图片读不到时的兜底色：取自 page-bg.webp 的墙面亮部，比原来的纯灰更贴这层光影，
+     不会出现"图挂了 → 突然变一块死灰"的落差 */
+  background: var(--page-bg-fallback);
   font-size: 14px;
   font-family: "Mona Sans VF", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Backtick Fix", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
   color: #191919;
@@ -13,11 +15,78 @@ body {
   --wx-text: #191919;
   --wx-gray: #B2B2B2;
   --wx-box: #F7F7F7;
-  --wx-bg: #F5F5F5;   /* 页面灰底：body 与 blogroll 共用一个值，不再各写一份字面量 */
+  --wx-bg: #F5F5F5;   /* 页面灰底：blogroll 等内层容器仍用它，body 已换成光影背景 */
   --wx-line: #E7E7E7;
   --wx-green: #07C160;
   --wx-red: #FA5151;
   --phone-w: 680px;    /* 版面宽度唯一来源：.phone 与 .nav 都引用它，避免两处各写一份而走偏 */
+  /* 页面背景三件套的唯一来源。图片路径只写这一处：换图只改这一行，
+     兜底色、蒙版、漂移幅度都跟着走，不留第二份字面量。 */
+  --page-bg-img: url("/img/page-bg.webp");
+  --page-bg-fallback: #E9EAE6;
+  --wx-bg-veil: rgba(245, 245, 245, .72);   /* 页脚两条半透明带：让树影在页脚透出来 */
+  --page-bg-veil: linear-gradient(180deg, rgba(255, 255, 255, .34) 0%, rgba(255, 255, 255, .06) 38%, rgba(250, 248, 245, .30) 100%);
+}
+
+/* ---------- 页面背景：树影天光 ----------
+ * 三层固定层，都在内容之下（body 的背景会传播到画布，负 z-index 画在它上面、
+ * .phone 之下；.phone 只有 position:relative 没有 z-index，不产生层叠上下文，
+ * 所以不会把这几层盖住）。
+ *   body::before 图片层 —— 树影是"墙上的影子"，墙不动，动的是光，所以这层静止。
+ *   body::after  蒙版层 —— 静止的白渐变，把图片边缘收进页面色调里。
+ *   .page-glow   光影层 —— 一团暖光 + 一团冷影交错漂移，负责"动"。全部只动
+ *              transform（合成器线程），不触发重排；混用 rgba 不用 mix-blend-mode，
+ *              因为 position:fixed 在 Chrome 里就是层叠上下文，blend 只会在自己
+ *              这层内部混合、碰不到底下的图片，等于白设。
+ * 可见范围要清楚：.phone 是 680px 不透明白柱，所以桌面端这层光影出现在柱子两侧的留白
+ * （1440 屏每侧约 380px），移动端只有页脚那一段透出来——靠下面 .blogroll/.license
+ * 改成半透明实现。 */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background: var(--page-bg-img) center / cover no-repeat;
+}
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--page-bg-veil);
+}
+/* 光影层：两团 130vmax 宽的大光斑，行程给到 ±30vmax（约 500px@1400 屏）。
+ * 上一版败在比例：光斑有 160% 视口那么大、位移却只有自身的 26%，一个两千像素宽的
+ * 软渐变挪五百像素，局部梯度几乎不变——实测 13 秒半周期的最大像素差只有 5/255。
+ * 想让"光在走"被看见，行程必须够得上光斑直径的可观比例。 */
+.page-glow { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+.page-glow::before,
+.page-glow::after {
+  content: "";
+  position: absolute;
+  width: 130vmax; height: 92vmax; top: -20vmax; left: -15vmax;
+  will-change: transform;
+}
+.page-glow::before {
+  background: radial-gradient(closest-side, rgba(255, 240, 205, .66), rgba(255, 240, 205, 0) 70%);
+  animation: pageGlowWarm 26s ease-in-out infinite alternate;
+}
+.page-glow::after {
+  background: radial-gradient(closest-side, rgba(88, 100, 118, .40), rgba(88, 100, 118, 0) 72%);
+  animation: pageGlowShade 34s ease-in-out infinite alternate;
+}
+@keyframes pageGlowWarm {
+  from { transform: translate3d(-30vmax, -16vmax, 0) scale(1); }
+  to   { transform: translate3d(26vmax, 22vmax, 0) scale(1.15); }
+}
+@keyframes pageGlowShade {
+  from { transform: translate3d(32vmax, 24vmax, 0) scale(1.15); }
+  to   { transform: translate3d(-28vmax, -20vmax, 0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-glow::before, .page-glow::after { animation: none; }
 }
 img { -webkit-user-drag: none; }
 a { text-decoration: none; color: inherit; }
@@ -374,12 +443,12 @@ video.p-media-el { aspect-ratio: 16 / 10; object-fit: contain; }
 /* 网上邻居（友情链接）— 纯文字链接，无分割线；用页面灰底而非 .phone 的白底 */
 /* 版权（CC 授权条款）提醒：与 .blogroll 同属灰底页脚带，用自身下边框把它们分开——
    网上邻居没有链接时会整块隐藏，所以分隔线挂在提醒上而不是挂在邻居上。 */
-.license { padding: 20px 24px 22px; background: var(--wx-bg); border-bottom: .5px solid var(--wx-line); }
+.license { padding: 20px 24px 22px; background: var(--wx-bg-veil); border-bottom: .5px solid var(--wx-line); }
 .license-text { font-size: 12px; line-height: 1.5; color: #8A9099; word-break: break-word; }
 /* 授权标识单独一行：条款正文是散文，混在末尾读起来像第四条条款。
    全局 * { margin: 0 } 把 p 的默认间距清掉了，所以行距要显式给。 */
 .license-id { margin-top: 6px; }
-.blogroll { padding: 24px; background: var(--wx-bg); }
+.blogroll { padding: 24px; background: var(--wx-bg-veil); }
 .blogroll-title { font-size: 13px; color: #8A9099; margin-bottom: 12px; letter-spacing: .5px; text-align: center; }
 /* 这里是 flex 容器，光写 text-align 居中不了子项，必须 justify-content: center */
 .blogroll-list { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; text-align: center; }
