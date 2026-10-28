@@ -26,7 +26,11 @@
     <img class="cover-img" id="coverImg" alt="封面">
     <div class="cover-name" id="coverName"></div>
     <div class="cover-sign" id="coverSign"></div>
-    <img class="cover-avatar" id="coverAvatar" alt="头像">
+    <!-- 头像与其上的积雪：包一层作定位锚，积雪跟随头像的尺寸与断点自动缩放 -->
+    <div class="cover-avatar-wrap">
+      <img class="cover-avatar" id="coverAvatar" alt="头像">
+      <img class="cover-snow" src="/img/snow.png" alt="" aria-hidden="true">
+    </div>
   </div>
 
   <!-- 信息流 -->

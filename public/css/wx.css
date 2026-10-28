@@ -155,10 +155,26 @@ input, textarea, select { font-family: inherit; }
   /* #7A7A7A 在白底上只有 4.29:1，不达 WCAG AA；#6A6A6A 为 5.41:1 */
   color: #6A6A6A; font-size: 12px; font-weight: 400;
 }
-.cover .cover-avatar {
+/* 头像的定位锚：位置与尺寸都挂在包装层上（含移动端断点），
+   积雪以它为参照叠放，两端断点换尺寸时雪会自动跟随，不用再抄一份魔法数。 */
+.cover .cover-avatar-wrap {
   position: absolute; right: 24px; bottom: -34px;
-  width: 68px; height: 68px; border-radius: 6px;
+  width: 68px; height: 68px;
+}
+.cover .cover-avatar {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%; border-radius: 6px;
   border: 2px solid #fff; object-fit: cover; background: #fff;
+}
+/* 积雪：完整的 snow.png 原图（三条雪堆 + 小树，200×36）。四个参数为邵先生给定值：
+   与头像同宽（width:100%）、整体左移 4%、下沿压进头像框 8px。高度不声明，
+   img 默认 auto，按 200:36 随宽度缩放（桌面 68px 宽 → 约 12px 高，移动端 60px → 约 11px）。 */
+.cover .cover-snow {
+  position: absolute;
+  left: -4%;
+  width: 100%;
+  bottom: calc(100% - 8px);
+  pointer-events: none;   /* 装饰层不吃点击；非外观参数，若也要去掉说一声 */
 }
 .feed { padding-top: calc(46px + env(safe-area-inset-top)); }
 
@@ -550,5 +566,5 @@ video.p-media-el { aspect-ratio: 16 / 10; object-fit: contain; }
   /* 封面按比例收窄，避免未滚动时第一条内容完全看不见；昵称/签名/头像间距随动 */
   .cover { height: 230px; }
   .cover .cover-name, .cover .cover-sign { right: 92px; }
-  .cover .cover-avatar { right: 14px; width: 60px; height: 60px; }
+  .cover .cover-avatar-wrap { right: 14px; width: 60px; height: 60px; }
 }
