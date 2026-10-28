@@ -20,7 +20,7 @@ body {
   --wx-line: #E7E7E7;
   --wx-green: #07C160;
   --wx-red: #FA5151;
-  --phone-w: 680px;    /* 版面宽度唯一来源：.phone 与 .nav 都引用它，避免两处各写一份而走偏 */
+  --phone-w: 800px;    /* 版面宽度唯一来源：.phone 与 .nav 都引用它，避免两处各写一份而走偏 */
   /* 页面背景三件套的唯一来源。图片路径只写这一处：换图只改这一行，
      兜底色、蒙版、漂移幅度都跟着走，不留第二份字面量。 */
   --page-bg-img: url("/img/page-bg.webp");
@@ -39,9 +39,9 @@ body {
  *              transform（合成器线程），不触发重排；混用 rgba 不用 mix-blend-mode，
  *              因为 position:fixed 在 Chrome 里就是层叠上下文，blend 只会在自己
  *              这层内部混合、碰不到底下的图片，等于白设。
- * 可见范围要清楚：.phone 是 680px 不透明白柱，所以桌面端这层光影出现在柱子两侧的留白
- * （1440 屏每侧约 380px），移动端只有页脚那一段透出来——靠下面 .blogroll/.license
- * 改成半透明实现。 */
+ * 可见范围要清楚：.phone 是 800px 不透明白柱，所以桌面端这层光影出现在柱子两侧的留白
+ * （1440 屏每侧约 320px、1280 屏约 240px；版面 680px 时曾是每侧约 380px），
+ * 移动端只有页脚那一段透出来——靠下面 .blogroll/.license 改成半透明实现。 */
 body::before {
   content: "";
   position: fixed;
@@ -138,10 +138,11 @@ input, textarea, select { font-family: inherit; }
 
 /* ============ 封面 ============ */
 .cover { position: relative; height: 280px; background: #26282B; }
-/* 槽位是 680×280 横条（版面宽 --phone-w），原图 918×1128 竖构图：cover 会等比放大到
-   680×836，可见带只有约 33.5% 高度。默认居中取的是中段约 33%–67%，
-   骑车人和狗（在底部约 85% 处）会被整块裁掉，所以这张必须贴底取。
-   ⚠️ 以后换成主体居中的照片时，把 object-position 改回 center。 */
+/* 槽位是 800×280 横条（版面宽 --phone-w），原图 918×1128 竖构图：cover 会等比放大到
+   800×983，可见带约 28.5% 高度（版面从 680 加宽到 800 后，这个带从 33.5% 缩到 28.5%）。
+   默认居中取的是中段，骑车人和狗（在底部约 85% 处）会被整块裁掉，所以这张必须贴底取。
+   ⚠️ 版面再加宽的话贴底也保不住主体（现在可见带是约 71.5%–100%，主体上方只剩约 13% 余量），
+   届时要么加高 .cover，要么换一张主体居中的照片并把 object-position 改回 center。 */
 .cover .cover-img { width: 100%; height: 100%; object-fit: cover; object-position: center bottom; display: block; }
 .cover .cover-name {
   position: absolute; right: 105px; bottom: 8px;
@@ -167,13 +168,13 @@ input, textarea, select { font-family: inherit; }
   border: 2px solid #fff; object-fit: cover; background: #fff;
 }
 /* 积雪：完整的 snow.png 原图（三条雪堆 + 小树，200×36）。四个参数为邵先生给定值：
-   与头像同宽（width:100%）、整体左移 4%、下沿压进头像框 8px。高度不声明，
+   与头像同宽（width:100%）、整体左移 4%、下沿压进头像框 7px。高度不声明，
    img 默认 auto，按 200:36 随宽度缩放（桌面 68px 宽 → 约 12px 高，移动端 60px → 约 11px）。 */
 .cover .cover-snow {
   position: absolute;
   left: -4%;
   width: 100%;
-  bottom: calc(100% - 8px);
+  bottom: calc(100% - 7px);
   pointer-events: none;   /* 装饰层不吃点击；非外观参数，若也要去掉说一声 */
 }
 .feed { padding-top: calc(46px + env(safe-area-inset-top)); }
