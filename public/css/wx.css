@@ -549,6 +549,14 @@ video.p-media-el { aspect-ratio: 16 / 10; object-fit: contain; }
   /* 热区撤掉后翻页只能点按钮本身，尺寸给到 44px 才够手指按 */
   .v-arrow { width: 44px; height: 44px; }
   .v-nav { gap: 20px; bottom: calc(26px + env(safe-area-inset-bottom)); }
+  /* 移动端不加载背景图与光影层，省一次图片请求 + 解码 + 三个全屏合成层。
+     display:none 的伪元素浏览器不会去取它的 background-image，所以是真的不发请求
+     （用 performance.getEntriesByType('resource') 实测过：资源列表里没有 page-bg.webp）。
+     可见性上几乎无损失：.phone 是 800px 不透明白柱，手机上它铺满整屏，背景只在页脚
+     那一段半透带露出一点；关掉后由 --page-bg-fallback 的浅色接管，观感基本一致。
+     蒙版 ::after 与光影 .page-glow 一起关掉——它们都是为那张图服务的，
+     图没了还留着漂移的冷暖洗色，只剩开销没有意义。 */
+  body::before, body::after, .page-glow { display: none; }
 }
 
 /* 窄屏：正文放大到移动端舒适值，并把 24px 两侧留白收窄（375px 屏上左右共吃掉 13% 宽度）。
