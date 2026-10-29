@@ -60,7 +60,7 @@
   const STAMP_MAX = TOUCH.matches ? 5200 : 9000;
   const DRIFT_LEN = 0.013;
 
-  let sky = null, skyCtx = null, gnd = null, gndCtx = null, light = null;
+  let sky = null, skyCtx = null, gnd = null, gndCtx = null;
   let W = 0, H = 0, dpr = 1, cols = 0, ground = null, pileCap = 0;
   let items = [], raf = 0, last = 0, sprites = null, lastSettle = 0;
   /* enabled 是「实际在跑」，wanted 是「用户想要它在跑」，两者必须分开（与 snow.js 同一口径）：
@@ -420,11 +420,9 @@
     if (sky) return;
     sky = document.createElement('canvas'); sky.id = 'blossom';
     gnd = document.createElement('canvas'); gnd.id = 'blossom-ground';
-    light = document.createElement('div'); light.id = 'spring-light';
-    [sky, gnd, light].forEach((n) => n.setAttribute('aria-hidden', 'true'));
+    [sky, gnd].forEach((n) => n.setAttribute('aria-hidden', 'true'));
     skyCtx = sky.getContext('2d');
     gndCtx = gnd.getContext('2d');
-    document.body.appendChild(light);
     document.body.appendChild(sky);
     document.body.appendChild(gnd);
     initStamps();
@@ -444,8 +442,8 @@
     clearTimeout(resizeTimer);
     window.removeEventListener('resize', resize);
     document.removeEventListener('visibilitychange', onVis);
-    [sky, gnd, light].forEach((n) => { if (n) n.remove(); });
-    sky = skyCtx = gnd = gndCtx = light = sprites = null;
+    [sky, gnd].forEach((n) => { if (n) n.remove(); });
+    sky = skyCtx = gnd = gndCtx = sprites = null;
     ground = null; items = []; bird = null; wind = 0; gustLen = 0;
     stampCount = 0; stampHead = 0;
   }
