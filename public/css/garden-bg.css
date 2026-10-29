@@ -1,5 +1,5 @@
 /* ==========================================================================
-   首屏花园背景（静态）+ 内容列毛玻璃
+   首屏花园背景（静态）
    改编自 hibi.garden — https://github.com/hibigarden/site
    （src/garden.css，MIT License，Copyright (c) 2026 schmayterling）
 
@@ -7,19 +7,16 @@
    地平线 0.68、云带 tile 66.67%）与日间图层素材，改动如下——
    1) 静态：视差（data-depth/sink/drift）、云漂移、闪烁与全部 JS 不引入；
    2) 仅日间：博客没有暗色主题，--night 素材与暗色规则全部不取；
-   3) 铺满视口 + 内容列毛玻璃：crisp 版铺满全屏（#garden-bg），
-      列形状的 #garden-frost 内放同一座场景的副本并 filter: blur()，
-      内容列半透明压在上面——等效于 backdrop-filter 的毛玻璃，
-      但模糊对象是静态元素，只算一次并缓存（backdrop-filter 的被采样层
-      含每帧都在动的雪画布，会退化成每帧一次的全屏软模糊）；
-   4) 仅桌面：两块都由 @media (min-width: 720px) 打开，窄屏不渲染不下载；
-   5) 单位全部用 vw/vh（原站用 cqw/cqh）：两份场景必须逐像素对齐，
-      容器查询单位会随各自容器取值，vw/vh 才能保证 frost 与 bg 同位。
+   3) 铺满视口：原站是内缩圆角面板，这里改为 position:fixed 铺满整个视口，
+   作为 760px 内容列的页面背景（内容列不透明白，花园只在两侧留白露出）；
+   4) 仅桌面：@media (min-width: 720px) 打开，窄屏不渲染不下载。
 
-   层叠（z-index，逐个核对）：#garden-bg 0 < 雪画布 5,6 < #garden-frost 7
-   < .phone 8（内容列 + .cbar）< .toast 260 < .viewer 300 < .mask 400 < .burst 500，
-   .nav 100 在内容列之上。雪落在毛玻璃后面：留白处清晰、玻璃后透出白色虚化光斑；
-   评论框（.cbar 在 .phone 内）保持不被雪糊。
+   层叠（z-index，逐个核对）：#garden-bg 0（最远）< .phone（白列，z-auto，
+   DOM 在花园之后所以压住它）< #snow/#blossom 5（飘落层）< 雪堆积层 6
+   < .pop 30 < .nav 100 < 表情面板 140 < .toast 260 < .viewer 300
+   < .mask 400 < .burst 500。
+   历史备注：曾配过一块列形状的 blur 副本当毛玻璃（#garden-frost 7），
+   用户验收后判"效果不太好"已整体移除；素材与几何都在本文件里，想恢复随时可加回。
    ========================================================================== */
 
 /* MIT License — Copyright (c) 2026 schmayterling。
@@ -27,7 +24,8 @@
    分发、再许可及/或销售本软件副本的权利……完整许可文本见：
    https://github.com/hibigarden/site/blob/main/LICENSE */
 
-/* ---- 场景几何：crisp 与 frost 两份共用，单位 vw/vh 保证逐像素对齐 ---- */
+/* ---- 场景几何（单位 vw/vh：#garden-bg 铺满视口，cqw/cqh 与 vw/vh 等价，
+        但 frost 副本时代证明 vw/vh 在非容器元素里也能正确取值） ---- */
 .g-scene {
   --m: 24px;
   --horizon: 0.68;
@@ -105,9 +103,11 @@
   --g-day: url("/img/garden/tree-day.webp");
 }
 
-/* ---- 两块画布 ---- */
+/* ---- 画布 ---- */
 
-/* 1) crisp：铺满视口，留白与玻璃后看到的都是这一份 */
+/* crisp：铺满视口，两侧留白与页面底色区域看到的都是这一份。
+   曾配过一块列形状的 blur 副本当毛玻璃（#garden-frost），用户验收后判"效果不太好"
+   已整体移除——素材与几何都在，想恢复时把它加回来即可。 */
 #garden-bg {
   position: fixed;
   inset: 0;
@@ -118,31 +118,6 @@
   display: none;                    /* 默认窄屏不显示，桌面档再打开 */
 }
 
-/* 2) frost：与内容列同形（居中、宽 = min(100vw, --phone-w)），
-      内放同一座场景的副本加 filter: blur() —— 静态元素的模糊只算一次并缓存；
-      overflow:hidden 负责裁出列的形状。z-index 见文件头的层叠表。 */
-#garden-frost {
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  left: 50%;
-  translate: -50% 0;
-  width: min(100vw, var(--phone-w, 800px));
-  z-index: 7;
-  overflow: hidden;
-  pointer-events: none;
-  display: none;
-}
-
-#garden-frost .g-scene {
-  /* 场景对齐视口而不是列：列在视口中央，视口左缘相对列 = 50% - 50vw，
-     再加上场景本体的 50vw - 1200c，合并成 50% - 1200c */
-  left: calc(50% - 1200 * var(--c));
-  filter: blur(22px) saturate(1.12);
-  /* blur 会向边缘外采样导致四周 22px 渐隐：场景本体横向超出视口、
-     纵向上下都有延伸，列的裁剪边采到的都是有效像素 */
-}
-
 @media (min-width: 720px) {
-  #garden-bg, #garden-frost { display: block; }
+  #garden-bg { display: block; }
 }

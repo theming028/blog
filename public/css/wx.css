@@ -38,14 +38,8 @@ input, textarea, select { font-family: inherit; }
   margin: 0 auto;
   min-height: 100vh;      /* 不支持 dvh 的旧内核兜底 */
   min-height: 100dvh;     /* 移动浏览器地址栏收放后真实可见高度，避免底部内容被遮 */
-  /* 毛玻璃内容列：不再是实心白。花园（#garden-bg 0）之上是列形状的磨砂层
-     （#garden-frost 7，blur 副本），这层铺 95% 白——磨砂后的花园只透 5% 进来
-     （用户看过 45% 的版本后要求加浓）。
-     帖子本体的白底也一并改透明，否则磨砂只看得见帖子之间的缝。
-     z-index:8 压过磨砂层 7，并被雪/花瓣画布（9/10）盖住——雪落在玻璃前面。 */
-  background: rgba(255, 255, 255, 0.95);
+  background: #fff;
   position: relative;
-  z-index: 8;
 }
 
 /* ============ 顶部导航栏 ============ */
@@ -148,7 +142,7 @@ input, textarea, select { font-family: inherit; }
 
 /* ============ 朋友圈条目 ============ */
 /* 信息流分隔线单独比 --wx-line(#E7E7E7) 再浅一档；不动 token，避免连带改浅后台列表线 */
-.post { display: flex; padding: 24px; background: transparent; border-bottom: .5px solid #F0F0F0; }
+.post { display: flex; padding: 24px; background: #fff; border-bottom: .5px solid #F0F0F0; }
 .p-avatar { width: 42px; height: 42px; border-radius: 6px; margin-right: 12px; flex: none; object-fit: cover; background: #D8D8D8; }
 .p-body { flex: 1; min-width: 0; }
 .p-name { color: var(--wx-blue); font-size: 14px; font-weight: 600; line-height: 1.4; margin-bottom: 4px; display: inline-block; }
@@ -429,12 +423,12 @@ video.p-media-el { aspect-ratio: 16 / 10; object-fit: contain; }
 /* 版权（CC 授权条款）提醒：与 .blogroll 同属灰底页脚带，用自身上边框把它们分开——
    分隔线必须挂在提醒上而不是挂在邻居上，因为网上邻居没有链接时会整块隐藏，
    线挂它身上就会剩一条悬空的线。（两者位置互换过一次，边框方向跟着从 bottom 改成 top。） */
-.license { padding: 20px 24px 22px; border-top: .5px solid var(--wx-line); }
+.license { padding: 20px 24px 22px; background: var(--wx-bg); border-top: .5px solid var(--wx-line); }
 .license-text { font-size: 12px; line-height: 1.5; color: var(--wx-sub); word-break: break-word; }
 /* 授权标识单独一行：条款正文是散文，混在末尾读起来像第四条条款。
    全局 * { margin: 0 } 把 p 的默认间距清掉了，所以行距要显式给。 */
 .license-id { margin-top: 6px; }
-.blogroll { padding: 24px; }
+.blogroll { padding: 24px; background: var(--wx-bg); }
 .blogroll-title { font-size: 13px; color: var(--wx-sub); margin-bottom: 12px; letter-spacing: .5px; text-align: center; }
 /* 这里是 flex 容器，光写 text-align 居中不了子项，必须 justify-content: center */
 .blogroll-list { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; text-align: center; }
@@ -462,14 +456,15 @@ video.p-media-el { aspect-ratio: 16 / 10; object-fit: contain; }
 /* ============ 飘雪（两张画布由 js/snow.js 创建，开关在后台「设置」） ============ */
 /* 固定全屏 + pointer-events: none：雪压在内容之上，但一律不吃点击——
    "看不见 ≠ 不挡"这条账在这份文件里已经记过一次了。
-      堆叠顺序（加入毛玻璃列后重排，逐个核对过归属）：
-     #garden-bg 0（花园，最远）→ #garden-frost 7（列形状磨砂玻璃）→ .phone 8（半透明内容列，
-     .cbar 在其内）→ #snow/#blossom 9（飘落层）→ 雪堆积层 10 → .toast 260 → .viewer 300 →
-     .mask 400 → .burst 500；.nav 100 在内容列之上（压着封面顶缘）。
-   雪落在玻璃前面：留白处清晰，玻璃后透出虚化光斑；评论框在玻璃后，不被雪糊。 */
-#snow, #blossom { position: fixed; inset: 0; z-index: 9; pointer-events: none; display: block; }
+         堆叠顺序（逐个核对过归属；毛玻璃列已按用户要求整体移除）：
+     #garden-bg 0（花园背景，最远，只在两侧留白露出）→ .phone（白列，z-auto，
+     DOM 在花园之后所以压住它）→ #snow/#blossom 5（飘落层，盖过白列）→
+     雪堆积层 6 → .pop 30 → .nav 100 → 表情面板 140 → .toast 260 → .viewer 300 →
+     .mask 400 → .burst 500。.cbar 无 z-index：白列不透明，雪画布在 DOM 尾部
+     天然盖在整列之上（历史行为，用户未提出异议）。 */
+#snow, #blossom { position: fixed; inset: 0; z-index: 5; pointer-events: none; display: block; }
 /* 桃花与飘雪同层：两者互斥，同一时刻只有一个画布存在，不需要再分先后 */
-#snow-ground, #blossom-ground { position: fixed; inset: 0; z-index: 10; pointer-events: none; display: block; }
+#snow-ground, #blossom-ground { position: fixed; inset: 0; z-index: 6; pointer-events: none; display: block; }
 /* 桃花堆积层与飘雪积雪层同层同序：都压在各自的下落层之上，
    花瓣落到花堆后面才对得上遮挡关系 */
 /* 减弱动态效果下 snow.js 本就不启动；这两条是防止浏览器里还留着旧版 JS 时仍有雪 */
