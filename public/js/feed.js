@@ -26,6 +26,13 @@ const ICON_IMG = '<svg viewBox="0 0 24 24"><path d="M21 3H3a1 1 0 0 0-1 1v16a1 1
 
 const imgUrl = (id) => `/api/images/${encodeURIComponent(id)}`;
 
+/* 特效调度：只认三个合法值，其它一律按默认飘雪处理 */
+function applyFx(mode) {
+  const m = mode === 'blossom' || mode === 'off' ? mode : 'snow';
+  if (window.Snow) Snow.setEnabled(m === 'snow');
+  if (window.Blossom) Blossom.setEnabled(m === 'blossom');
+}
+
 /* ---------- 音视频播放控制 ----------
    四条规则，都是为了"不占资源、不吵"：
    1) 同一时刻只允许一个在播。play 事件不冒泡，所以监听必须走捕获阶段；
@@ -858,9 +865,10 @@ async function loadSettings() {
   $('#coverName').textContent = s.nickname || '';
   $('#coverSign').textContent = s.sign || '';
   $('#coverSign').style.display = s.sign ? '' : 'none';
-  /* 飘雪：只有精确等于 'off' 才关。取数失败时 s.snow 是 undefined，与 DEFAULT_SETTINGS
-     的 'on' 同向，不会因为一次请求失败就整站没雪。关掉时两张画布都不创建，零开销。 */
-  if (window.Snow) Snow.setEnabled(s.snow !== 'off');
+  /* 飘落特效：三选一、互斥，交给 applyFx 统一开关（两个引擎同时开着会各占一张
+     全屏画布和一条 rAF，看起来还像"雪和桃花一起下"）。
+     取数失败时 s.fx 是 undefined，落到默认 'snow'，不会因为一次请求失败就整站没特效。 */
+  applyFx(s.fx);
   $('#copyright').textContent = `© ${new Date().getFullYear()} ${s.nickname || ''} · 朝夕光年`;
 }
 

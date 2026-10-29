@@ -13,7 +13,7 @@ PORT=3000 HOST=127.0.0.1 node server.js
 
 | 路由 | 说明 |
 | --- | --- |
-| `/` | 信息流（点赞、评论、回复、大图查看、分页、友链、飘雪） |
+| `/` | 信息流（点赞、评论、回复、大图查看、分页、友链、飘落特效） |
 | `/admin` | 后台：内容 / 评论审核 / 访客记录 / 友链 / 设置 |
 | `/edit` | 发布与编辑 |
 | `/login` | 后台登录 |
@@ -42,13 +42,54 @@ node -e "console.log(require('crypto').createHash('sha256').update('tm-blog-salt
 
 ## 前端约定
 
-- **默认设置只有一处**：`server.js` 的 `DEFAULT_SETTINGS`。`GET /api/settings` 只回 `cover/avatar/nickname/sign/snow` 五个键（白名单 `PUBLIC_SETTING_KEYS`）；前台不写死任何兜底值。（历史上它散在四个文件，改封面必漏。）
+- **默认设置只有一处**：`server.js` 的 `DEFAULT_SETTINGS`。`GET /api/settings` 只回 `cover/avatar/nickname/sign/fx` 五个键（白名单 `PUBLIC_SETTING_KEYS`）；前台不写死任何兜底值。（历史上它散在四个文件，改封面必漏。）
 - **缓存**：`html/css/js` 是 `no-cache` + `ETag`/`Last-Modified`（命中返回 304），改完**普通刷新即生效**；`public/` 下图片 `max-age=300`；`/api/images/*` 因 id 内容寻址，用 `immutable` 一年。
 - **CSP 为 `script-src 'self'`**：不要往 HTML 里加内联 `<script>`，会被拦。内联样式属性可以用（`style-src` 允许 `unsafe-inline`）。
 - **全局字体**在两份 CSS 的 `body` 上（`wx.css` 前台，`admin.css` 后台/发布/登录），表单控件靠 `font-family: inherit` 跟上。
 - 评论反垃圾在 `lib/spam.js`，命中转 `pending` 进后台待审，前台不展示。
 - **点赞是累加模型**：`POST /api/posts/:id/like` 每次记一行（双击可累加），`DELETE` 清空该访客在这条下的全部赞；
   按 `IP+帖子` 节流（1 秒 3 次 / 60 秒 60 次）。**不要**给 `likes` 加唯一索引或在应用层恢复去重查询。
+- **封面图有固定比例，后台上传即裁剪**：槽位是 `--phone-w`(760px) × `.cover` 高(280px) = **19:7**，
+  最佳成图 **1520×560**（2 倍图）。规格只在 `public/js/crop.js` 的 `SPECS` 里写一份，
+  裁剪框的 `aspect-ratio` 由它注入 CSS，不在两边各写一遍。⚠️ 改 `--phone-w` 或 `.cover` 高度必须同步 `SPECS`。
+  裁剪器是「可视区即裁剪框」模型：用户只能平移与缩放，改不了框比例，因此不可能裁出填不满槽位的尺寸。
+  几何全在纯函数 `layout()` 里（不碰 DOM，Node 侧可 require 单测）。裁完直接以 JPEG 上传，不再过前端压缩。
+  ⚠️ 移动端另算一种几何：`@media (max-width:480px)` 把 `.cover` 压到 230px 高，19:7 的成图在这个框里
+  会被横向切掉约 40% 宽度（375 宽只剩 60.1%）。裁剪器只保证**桌面端**所见即所得，选片时主体要落在画面中间。
+- **头像仍走原来的直接上传**（`SPECS.avatar` 已备好 200×200，接上裁剪器只需在 `#fileAvatar` 那行换成分支）。
+- **后台预览与槽位同比例**：设置页里封面图与头像各占一行，预览框的 `aspect-ratio` 由
+  `applyMediaSpecs()` 从 `Crop.SPECS` 注入，并用与前台相同的 `object-fit/object-position`
+  ——预览看到的就是线上排出来的样子，不再是 96px 高的窄条。
+
+## 飘落特效
+
+`settings.fx` 三选一、**互斥**：`snow`（飘雪）/ `blossom`（粉红桃花）/ `off`（都不显示）。
+后台「设置 → 飘落特效」是三个真 radio 组成的分段控件（键盘与读屏可操作，选中态由
+`paintFx()` 画在 label 上，因为 radio 本体被隐藏）。
+
+- 调度集中在 `feed.js` 的 `applyFx(mode)`：切换时把另一个引擎显式关掉，否则两个引擎
+  会同时占一张全屏画布和一条 rAF，用户看着像"雪和桃花一起下"。
+- 取数失败时 `s.fx` 是 `undefined`，`applyFx` 退回默认 `snow`，不会因为一次请求失败就整站没特效。
+- **桃花是独立模块** `public/js/blossom.js`，没有塞进 `snow.js`：那边绑着六角晶体精灵、
+  按层 bokeh 两件雪专属逻辑，花瓣不该长得像晶体；桃花自己另有一套花瓣/嫩叶精灵与阵风、燕子。
+  两者只共用同一套安全约定：DPR 预算、触屏降档、帧间隔滑动平均 >21ms 连续 90 帧就隔帧不画
+  （30Hz 单向锁存，判据与理由两边逐字一致）、`prefers-reduced-motion` 不跑（且按 `wanted`
+  双态记住用户意图，系统设置改回去能自动恢复）、页面隐藏时暂停、关掉时连画布都不创建
+  （零开销）。花瓣精灵只烘一次，逐帧 `drawImage` 加旋转，不逐帧走路径填充。
+  堆积模型两边同构：高度图 + 落地即盖章 + 视口变化按盖章记录回放重建（见下一条）。
+- **桃花带四个春天元素**（都在 `blossom.js` 内，参数集中在文件顶部）：
+  嫩叶（`LEAF_RATIO` 约 1:4 混落，比花瓣重：落得快、转得慢）、
+  阵风（`GUST_EVERY/GUST_LEN/GUST_PEAK`，15–38 秒一次、缓入缓出，只推空中的花瓣，
+  **不动花堆** —— 卷起堆顶要重印，第一版不做）、
+  燕子（`BIRD_EVERY/BIRD_SCALE`，每 40–85 秒一只横穿，扑翼用二次曲线翼尖上下摆实现）、
+  春光（`#spring-light`，一层极淡暖光，**放在内容之下**而不是蒙在正文上，
+  否则直接吃掉正文对比度；代价是只在版面两侧留白看得见，移动端基本不露）。
+- **花堆会封顶，不会越埋越高**：`PILE_MAX_VH`(0.11) / `PILE_MAX_PX`(90) 取小者，
+  到顶后 `pilePx` 就停在 cap 上。连续看约 3 分钟到顶，普通访问几十秒只是薄薄一层。
+  嫌埋正文就调小这两个值。
+- **旧值迁移在读取边界做**：`publicSettings()` 发现库里只有 `snow: 'on'|'off'` 而没有 `fx` 时，
+  翻译成 `fx` 再输出，且 `snow` 不再出现在响应里 —— 避免两个键各说一套。
+  历史数据里残留的 `snow` 字段不参与判断，也不用手工清。
 - **访客计数**：`POST /api/visit`（公开）只存 `sha256(固定盐 + IP)` 截 32 位，不落原始 IP。取 IP 依次试
   `ali-swift-real-client-ip` / `x-real-ip` / `cf-connecting-ip` → `x-forwarded-for` 首段 → socket，
   每段都过 `net.isIP`；并按**不可伪造的 socket IP** 节流（60 秒 20 次）。云端计数缓存 60 秒，
@@ -181,4 +222,4 @@ QW Pages（动态页）：`category: "dynamic"`、`entrypoint: "server.js"`、`p
 
 - 线上（Supabase）与本地（LocalStore）是两套数据，会各自演化；发布不会覆盖线上内容，但线上也不会回流本地。若长期双轨，需要定一个主数据源。
 - `LocalStore` 删帖不会回收 `images` 表里的图片行，孤儿数据会累积（线上同理）。
-- 封面图目前是 1.31MB 的 PNG 插画，转 JPEG/WebP 可显著变小；封面槽位是 640×280 横条、`object-position: center bottom`（这张插画主体在底部，居中裁切会把人和狗裁掉），换主体居中的图时记得改回 `center`。
+- 封面图目前是 1.31MB 的 PNG 插画，转 JPEG/WebP 可显著变小。槽位比例与移动端切幅见上方「封面图有固定比例」那条（唯一口径）；这张插画主体在底部，靠 `object-position: center bottom` 保住，换主体居中的图时记得改回 `center`。

@@ -12,13 +12,18 @@ body {
   --wx-blue-deep: #465577; /* 主按钮按下/悬停用 */
   --wx-text: #191919;
   --wx-gray: #B2B2B2;
-  --wx-sub: #8A9099;   /* 次级文字：页脚说明、网上邻居标题、版权与访客计数共用一份 */
+  /* 次级文字：页脚说明、网上邻居标题、版权与访客计数共用一份。
+     对比度按最坏底色（页面灰 #f0f0f0）量：旧值 #8A9099 只有 2.82:1，连大字号的
+     3:1 都不够，而本文件对次级文字既有口径是 WCAG AA（见 .cover-sign 的 #6A6A6A）。
+     #676D73 在 #f0f0f0 上 4.59:1、在白底上 5.23:1，两处都过 4.5，色相仍是同一族冷灰。
+     注意：admin.css 的 --adm-muted 恰好同值但底色只有白，不跟着这次改动走。 */
+  --wx-sub: #676D73;
   --wx-box: #F7F7F7;
-  --wx-bg: #F5F5F5;   /* 页面灰底：blogroll 等内层容器仍用它，body 已换成光影背景 */
+  --wx-bg: #f0f0f0;   /* 页面灰底唯一来源：body 与页脚的 .license/.blogroll 共用，改这一处三边同步 */
   --wx-line: #E7E7E7;
   --wx-green: #07C160;
   --wx-red: #FA5151;
-  --phone-w: 800px;    /* 版面宽度唯一来源：.phone 与 .nav 都引用它，避免两处各写一份而走偏 */
+  --phone-w: 760px;    /* 版面宽度唯一来源：.phone 与 .nav 都引用它，避免两处各写一份而走偏 */
 }
 
 img { -webkit-user-drag: none; }
@@ -70,11 +75,18 @@ input, textarea, select { font-family: inherit; }
 
 /* ============ 封面 ============ */
 .cover { position: relative; height: 280px; background: #26282B; }
-/* 槽位是 800×280 横条（版面宽 --phone-w），原图 918×1128 竖构图：cover 会等比放大到
-   800×983，可见带约 28.5% 高度（版面从 680 加宽到 800 后，这个带从 33.5% 缩到 28.5%）。
-   默认居中取的是中段，骑车人和狗（在底部约 85% 处）会被整块裁掉，所以这张必须贴底取。
-   ⚠️ 版面再加宽的话贴底也保不住主体（现在可见带是约 71.5%–100%，主体上方只剩约 13% 余量），
-   届时要么加高 .cover，要么换一张主体居中的照片并把 object-position 改回 center。 */
+/* 槽位是 760×280（版面宽 --phone-w，比例 19:7）。两种图两种说法，别混：
+   1) 走后台裁剪器上传的：成图 1520×560 就是槽位的 2 倍图，比例与槽位严格相等，
+      cover 两边都不裁，这条 object-position 不起作用——桌面端所见即所得。
+   2) 未经裁剪的历史图（例如现在这张 918×1128 竖构图）：cover 等比放大到 760×934，
+      只显示约 70%–100% 的高度带。默认居中取的是中段，骑车人和狗（底部约 85% 处）
+      会被整块裁掉，所以这张必须贴底取。⚠️ 版面再加宽的话贴底也保不住主体
+      （主体上方只剩约 15% 余量），届时要么加高 .cover，要么换一张主体居中的照片
+      并把 object-position 改回 center。
+   ⚠️ 移动端是第三种几何：@media (max-width:480px) 把高度压到 230px，19:7 的成图
+      按高度铺满会等比成 624×230 再横向居中，只保留约 60% 宽度（360 宽 57.7%、
+      375 宽 60.1%、414 宽 66.3%、480 宽 76.9%），画面左右两端被切掉。
+      所以主体必须落在画面中间，别贴着左右边缘——裁剪器只保证桌面端一致。 */
 .cover .cover-img { width: 100%; height: 100%; object-fit: cover; object-position: center bottom; display: block; }
 .cover .cover-name {
   position: absolute; right: 105px; bottom: 8px;
@@ -433,10 +445,28 @@ video.p-media-el { aspect-ratio: 16 / 10; object-fit: contain; }
      .phone 内容 0–3  <  #snow 5  <  #snow-ground 6  <  .cbar 7  <  .pop 30
      <  .nav 100  <  表情面板 140  <  .toast 260  <  .viewer 300  <  .mask 400  <  .burst 500
    积雪层（#snow-ground）压在飘雪层之上：雪粒落到雪堆后面，才对得上遮挡关系。 */
-#snow { position: fixed; inset: 0; z-index: 5; pointer-events: none; display: block; }
-#snow-ground { position: fixed; inset: 0; z-index: 6; pointer-events: none; display: block; }
+#snow, #blossom { position: fixed; inset: 0; z-index: 5; pointer-events: none; display: block; }
+/* 桃花与飘雪同层：两者互斥，同一时刻只有一个画布存在，不需要再分先后 */
+#snow-ground, #blossom-ground { position: fixed; inset: 0; z-index: 6; pointer-events: none; display: block; }
+/* 桃花堆积层与飘雪积雪层同层同序：都压在各自的下落层之上，
+   花瓣落到花堆后面才对得上遮挡关系 */
+/* 春光：一层极淡的暖光。放在内容之下（负 z-index）而不是蒙在正文上——
+   蒙上去会直接吃掉正文对比度，浅色底上尤其明显。
+   代价是它只在版面两侧的留白里看得见（.phone 是不透明白柱），移动端基本不露。
+   只随桃花出现，由 blossom.js 创建/销毁，关掉特效时这层也不存在。 */
+#spring-light {
+  position: fixed; inset: -8%; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(58% 42% at 16% 6%, rgba(255, 243, 214, .62), rgba(255, 243, 214, 0) 70%),
+    radial-gradient(52% 38% at 88% 96%, rgba(255, 224, 231, .5), rgba(255, 224, 231, 0) 72%);
+  animation: springLightDrift 64s ease-in-out infinite alternate;
+}
+@keyframes springLightDrift {
+  from { transform: translate3d(-1.4%, -1%, 0) scale(1.02); }
+  to   { transform: translate3d(1.4%, 1%, 0) scale(1.07); }
+}
 /* 减弱动态效果下 snow.js 本就不启动；这两条是防止浏览器里还留着旧版 JS 时仍有雪 */
-@media (prefers-reduced-motion: reduce) { #snow, #snow-ground { display: none; } }
+@media (prefers-reduced-motion: reduce) { #snow, #snow-ground, #blossom, #blossom-ground, #spring-light { display: none; } }
 
 /* 双击落点限制在帖子内；manipulation 关掉浏览器自带的双击缩放，避免和我们的双击点赞打架 */
 .post { touch-action: manipulation; }
@@ -496,7 +526,9 @@ video.p-media-el { aspect-ratio: 16 / 10; object-fit: contain; }
   .license { padding: 18px 14px 20px; }
   /* 底部留白与上方触屏规则保持同一个值（原来这里是 32px，会在手机上盖掉触屏那条） */
   .copyright { padding: 16px 14px 8px; }
-  /* 封面按比例收窄，避免未滚动时第一条内容完全看不见；昵称/签名/头像间距随动 */
+  /* 封面按比例收窄，避免未滚动时第一条内容完全看不见；昵称/签名/头像间距随动。
+     高度不跟 19:7 走，所以这里是「第三种槽位几何」：19:7 的图在此框内会被横向切掉
+     约 40% 宽度，具体数字与影响见上方封面区块的注释。 */
   .cover { height: 230px; }
   .cover .cover-name, .cover .cover-sign { right: 92px; }
   .cover .cover-avatar-wrap { right: 14px; width: 60px; height: 60px; }

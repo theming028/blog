@@ -27,16 +27,16 @@ const IMAGE_SIGNATURES = {
 /* 唯一的数据源默认值：前端不再各自抄一份（此前散在 index.html 兜底 src、
  * feed.js state.settings、admin.js DEFAULTS 共 4 处，改封面时真实漏改过）。
  * 对外只通过 GET /api/settings 下发，且只回下面这几个键，服务端自用键不外泄。 */
-const PUBLIC_SETTING_KEYS = ['cover', 'avatar', 'nickname', 'sign', 'snow'];
+const PUBLIC_SETTING_KEYS = ['cover', 'avatar', 'nickname', 'sign', 'fx'];
+const FX_VALUES = ['snow', 'blossom', 'off'];
 const DEFAULT_SETTINGS = {
   cover: '/demo/cover.png',
   avatar: '/demo/ming.jpg',
   nickname: 'Ming',
   sign: '低调入尘埃',
-  /* 飘雪开关。值是字符串：setSettings 走 String(v).trim()，
-     存 'on'/'off' 比存布尔更不容易被后来的判断绕晕——只有精确等于 'off' 才关，
-     取数失败时前端拿到 undefined 仍然是开。 */
-  snow: 'on',
+  /* 飘落特效：三选一，互斥。值是字符串（setSettings 走 String(v).trim()）。
+     取数失败时前端拿到 undefined，会退回这个默认值，不会整站没特效。 */
+  fx: 'snow',
 };
 
 /* 访客填的主页、友链、音视频外链都走这一道：只允许 http(s)。统一"补协议 → new URL → 存 href"，
@@ -653,8 +653,18 @@ async function handleApi(req, res, pathname, query) {
   }
 
   /* 只回白名单键：settings 里还有服务端自用的标记（如 _migrated），不能整包吐给浏览器 */
-  const publicSettings = (s) => {
-    const merged = { ...DEFAULT_SETTINGS, ...(s || {}) };
+  const publicSettings = (raw) => {
+    const stored = { ...(raw || {}) };
+    /* 旧版只有一个 snow: 'on' | 'off' 开关。这里在读取边界上一次性翻译成 fx，
+       之后客户端只认 fx——避免两个键各说一套、改了一个另一个还留着旧值。
+       历史数据里残留的 snow 不再对外输出，也不参与判断。 */
+    if (stored.fx === undefined && stored.snow !== undefined) {
+      stored.fx = String(stored.snow).trim() === 'off' ? 'off' : 'snow';
+    }
+    const merged = { ...DEFAULT_SETTINGS, ...stored };
+    // 值可能被手改坏（拼错、大小写），统一收敛到合法值，前端不必再兜
+    if (FX_VALUES.indexOf(String(merged.fx).trim()) < 0) merged.fx = DEFAULT_SETTINGS.fx;
+    else merged.fx = String(merged.fx).trim();
     const out = {};
     for (const k of PUBLIC_SETTING_KEYS) out[k] = merged[k];
     return out;
@@ -668,7 +678,12 @@ async function handleApi(req, res, pathname, query) {
     const b = await readBody(req);
     const patch = {};
     for (const k of PUBLIC_SETTING_KEYS) {
-      if (b[k] !== undefined) patch[k] = String(b[k]).trim();
+      if (b[k] === undefined) continue;
+      const v = String(b[k]).trim();
+      /* fx 是枚举值，写路径同样要把关：只靠读路径收敛的话，非法值会永久躺在库里，
+         界面上选中项与库里存的值对不上，排查时极易误判成「我明明选了桃花」。 */
+      if (k === 'fx' && FX_VALUES.indexOf(v) < 0) return sendError(res, 400, '特效取值只能是 snow / blossom / off');
+      patch[k] = v;
     }
     const saved = await store.setSettings(patch);
     return sendJson(res, 200, { settings: publicSettings(saved) });

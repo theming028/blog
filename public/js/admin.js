@@ -67,16 +67,41 @@ async function load() {
   startPolling();
 }
 
+/* 预览框比例、裁剪框比例、提示文案三者同源，都读 Crop.SPECS：
+   改槽位尺寸时只有 SPECS 一处要动，不会出现「裁出来 19:7、预览还是 20:7」。 */
+function applyMediaSpecs() {
+  if (!window.Crop) return;
+  const c = Crop.SPECS.cover, a = Crop.SPECS.avatar;
+  $('#pickCover').style.aspectRatio = c.w + ' / ' + c.h;
+  $('#pickAvatar').style.aspectRatio = a.w + ' / ' + a.h;
+  $('#coverSpecHint').textContent = '最佳 ' + c.w + '×' + c.h + '（槽位 ' + c.slot + ' 的 2 倍）· 上传后可裁剪';
+  $('#avatarSpecHint').textContent = '正方形 · 最佳 ' + a.w + '×' + a.h;
+}
+const FX_VALUES = ['snow', 'blossom', 'off'];
+function fxValue() {
+  const el = document.querySelector('#fxSeg input:checked');
+  return el && FX_VALUES.indexOf(el.value) >= 0 ? el.value : 'snow';
+}
+/* 选中态画在 label 上（radio 本体被隐藏了），change 时同步一次 */
+function paintFx() {
+  $$('#fxSeg .adm-seg-item').forEach((l) => l.classList.toggle('on', !!l.querySelector('input').checked));
+}
+
 /* 设置表单的唯一填充口：初次加载与保存成功后各调一次。
    不在视图切换时调用——那会冲掉用户写到一半的昵称/签名。 */
 function renderSettings() {
+  applyMediaSpecs();
   $('#pickCoverImg').src = settings.cover;
   $('#pickAvatarImg').src = settings.avatar;
   $('#setNickInput').value = settings.nickname || '';
   $('#signInput').value = settings.sign || '';
-  // 只有明确存过 'off' 才算关；老数据没这个键时按服务端下发的默认值（开）走
-  $('#setSnow').checked = settings.snow !== 'off';
+  // 特效三选一；服务端已把旧的 snow:'on|off' 迁移成 fx，这里只认 fx
+  const want = FX_VALUES.indexOf(settings.fx) >= 0 ? settings.fx : 'snow';
+  const r = document.querySelector('#fxSeg input[value="' + want + '"]');
+  if (r) r.checked = true;
+  paintFx();
 }
+$('#fxSeg').addEventListener('change', paintFx);
 
 function renderStats() {
   const total = posts.length;
@@ -538,15 +563,40 @@ $('#dlgLinkOk').addEventListener('click', async () => {
 });
 
 /* ============ 设置（签名 + 封面图 + 头像 + 昵称，合并成一个表单一次保存） ============ */
+/* 只落到本地 settings 与预览图上，不发 PUT：四件事必须一起保存，
+   免得"换完图以为已经好了"——保存键就摆在同一个表单里。 */
+async function applyPicked(url, imgId, key) {
+  settings[key] = url; $(`#${imgId}`).src = url;
+}
 async function pickAndPreview(input, imgId, key) {
   const file = input.files && input.files[0]; input.value = ''; if (!file) return;
-  // 这里只落到本地 settings 与预览图上，不发 PUT：四件事必须一起保存，
-  // 免得"换完图以为已经好了"——保存键就摆在同一个表单里。
-  try { const r = await uploadImageFile(file); settings[key] = r.url; $(`#${imgId}`).src = r.url; }
+  try { const r = await uploadImageFile(file); await applyPicked(r.url, imgId, key); }
   catch (e) { alertDlg(e.message || '上传失败'); }
 }
+/* 裁剪出来的成图已经是目标尺寸 + JPEG，不需要再过一遍前端压缩，直接上传 */
+async function uploadDataUrl(dataUrl) {
+  return api('/api/upload', { method: 'POST', body: { mime: 'image/jpeg', data: dataUrl.slice(dataUrl.indexOf(',') + 1) } });
+}
+async function pickAndCropCover(input) {
+  const file = input.files && input.files[0]; input.value = ''; if (!file) return;
+  if (!window.Crop) {   // 裁剪器没加载成功时退回直接上传，不要让换封面这条路整个断掉
+    try { const r = await uploadImageFile(file); await applyPicked(r.url, 'pickCoverImg', 'cover'); }
+    catch (e) { alertDlg(e.message || '上传失败'); }
+    return;
+  }
+  Crop.open({
+    file, spec: Crop.SPECS.cover,
+    onDone: async (dataUrl) => {
+      try {
+        const r = await uploadDataUrl(dataUrl);
+        await applyPicked(r.url, 'pickCoverImg', 'cover');
+        showToast('封面已裁剪到 ' + Crop.SPECS.cover.w + '×' + Crop.SPECS.cover.h + '，点「保存设置」生效');
+      } catch (e) { alertDlg(e.message || '上传失败'); }
+    },
+  });
+}
 $('#pickCover').addEventListener('click', () => $('#fileCover').click());
-$('#fileCover').addEventListener('change', (e) => pickAndPreview(e.target, 'pickCoverImg', 'cover'));
+$('#fileCover').addEventListener('change', (e) => pickAndCropCover(e.target));
 $('#pickAvatar').addEventListener('click', () => $('#fileAvatar').click());
 $('#fileAvatar').addEventListener('change', (e) => pickAndPreview(e.target, 'pickAvatarImg', 'avatar'));
 
@@ -561,7 +611,7 @@ $('#btnSetSave').addEventListener('click', async () => {
     const r = await api('/api/settings', {
       method: 'PUT',
       // 五项一次写完：合并成一个设置页之后再拆开保存就白合了
-      body: { cover: settings.cover, avatar: settings.avatar, nickname: nick, sign: $('#signInput').value.trim(), snow: $('#setSnow').checked ? 'on' : 'off' },
+      body: { cover: settings.cover, avatar: settings.avatar, nickname: nick, sign: $('#signInput').value.trim(), fx: fxValue() },
     });
     settings = r.settings; // 服务端回的是合并后的完整值，不再需要本地默认值兜底
     renderSettings();

@@ -159,9 +159,17 @@
       <!-- 设置视图：签名 + 封面图 + 头像 + 昵称，一个表单、一个保存键 -->
       <section class="adm-view" id="viewSettings" hidden>
         <div class="adm-form">
+          <!-- 封面与头像各占一行，预览框的宽高比由 crop.js 的 SPECS 注入，
+               与前台槽位严格同比例——预览看到的就是线上排出来的样子 -->
           <div class="set-pick-row">
-            <div class="set-pick"><label>封面图 <span class="hint">换图后需保存</span></label><div class="set-box" id="pickCover"><img id="pickCoverImg" alt=""><span class="badge">更换</span></div></div>
-            <div class="set-pick"><label>头像 <span class="hint">换图后需保存</span></label><div class="set-box" id="pickAvatar"><img id="pickAvatarImg" alt=""><span class="badge">更换</span></div></div>
+            <div class="set-pick">
+              <label>封面图 <span class="hint" id="coverSpecHint">最佳 1520×560（19:7）· 上传后可裁剪</span></label>
+              <div class="set-box set-box-cover" id="pickCover"><img id="pickCoverImg" alt=""><span class="badge">更换</span></div>
+            </div>
+            <div class="set-pick">
+              <label>头像 <span class="hint" id="avatarSpecHint">正方形 · 最佳 200×200</span></label>
+              <div class="set-box set-box-avatar" id="pickAvatar"><img id="pickAvatarImg" alt=""><span class="badge">更换</span></div>
+            </div>
           </div>
           <div class="adm-field">
             <label>昵称</label>
@@ -171,8 +179,15 @@
             <label>封面签名 <span class="hint">留空则不显示</span></label>
             <input class="adm-input" id="signInput" type="text" maxlength="40" placeholder="显示在封面昵称下方">
           </div>
+          <!-- 页面飘落特效：三选一，互斥。用真 radio 而不是自制按钮组，
+               键盘与读屏能正常操作，选中态也不依赖 JS -->
           <div class="adm-field">
-            <label class="adm-switch"><input type="checkbox" id="setSnow"> 飘雪 <span class="hint">前台页面的大雪微风特效；关掉时不创建画布、零开销</span></label>
+            <label>飘落特效 <span class="hint">同时只显示一种，也可全部关闭</span></label>
+            <div class="adm-seg" id="fxSeg">
+              <label class="adm-seg-item"><input type="radio" name="fx" value="snow"><svg viewBox="0 0 24 24"><path d="M12 2v20M4 6l16 12M20 6 4 18M2 12h20" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>飘雪</label>
+              <label class="adm-seg-item"><input type="radio" name="fx" value="blossom"><svg viewBox="0 0 24 24"><path d="M12 4c1.8-2.4 5.4-1.6 5.4 1.4 0 2.2-2.6 3.6-5.4 6.2-2.8-2.6-5.4-4-5.4-6.2C6.6 2.4 10.2 1.6 12 4z" fill="currentColor"/><path d="M12 11.6c2.4-1 5.4.6 4.6 3.4-.6 2.2-3.8 2.4-6.6 1.6 2.8.8 4 3.8 1.8 5-2.2 1.2-4.6-1-5-3.8.4 2.8-1.8 5-4 3.8-2.2-1.2-1-4.2 1.8-5-2.8.8-6 .6-6.6-1.6-.8-2.8 2.2-4.4 4.6-3.4" fill="currentColor" opacity=".75"/></svg>桃花</label>
+              <label class="adm-seg-item"><input type="radio" name="fx" value="off"><svg viewBox="0 0 24 24"><path d="M12 7c2.8 0 5.3 1.3 7 3.4-1.7 2.1-4.2 3.4-7 3.4s-5.3-1.3-7-3.4C6.7 8.3 9.2 7 12 7zm0-2C6.5 5 2.7 7.9 1 10.4c1.7 2.5 5.5 5.4 11 5.4s9.3-2.9 11-5.4C21.3 7.9 17.5 5 12 5z" fill="currentColor"/><path d="m4 3 16 16-1.4 1.4L2.6 4.4z" fill="currentColor"/></svg>关闭</label>
+            </div>
           </div>
           <div class="adm-form-actions"><button class="adm-btn primary" id="btnSetSave">保存设置</button></div>
         </div>
@@ -195,6 +210,26 @@
   </div>
 </div>
 
+<!-- 封面裁剪弹窗：可视区即裁剪框（比例锁定），拖动平移、滑杆/滚轮缩放 -->
+<div class="adm-mask" id="cropMask">
+  <div class="adm-modal crop-modal">
+    <div class="adm-modal-head" id="cropTitle">裁剪封面图</div>
+    <div class="adm-modal-body">
+      <div class="crop-box" id="cropBox"><canvas id="cropCanvas"></canvas><div class="crop-guide"></div></div>
+      <div class="crop-ctl">
+        <span>缩放</span>
+        <input type="range" id="cropZoom" min="1" max="4" step="0.01" value="1">
+        <b id="cropZoomVal">100%</b>
+      </div>
+      <div class="adm-note" id="cropHint">拖动图片调整位置，滑杆或滚轮缩放。</div>
+    </div>
+    <div class="adm-modal-foot">
+      <button class="adm-btn" id="cropCancel">取消</button>
+      <button class="adm-btn primary" id="cropOk">裁剪并上传</button>
+    </div>
+  </div>
+</div>
+
 <!-- 确认弹窗 -->
 <div class="adm-mask" id="dlgConfirm">
   <div class="adm-modal" style="width:360px">
@@ -214,6 +249,8 @@
 <input type="file" id="fileAvatar" accept="image/jpeg,image/png,image/webp" style="display:none">
 
 <script src="/js/common.js"></script>
+<!-- crop.js 在 admin.js 之前：设置视图的封面选择要调 window.Crop.open -->
+<script src="/js/crop.js"></script>
 <script src="/js/admin.js"></script>
 </body>
 </html>
