@@ -39,10 +39,11 @@ input, textarea, select { font-family: inherit; }
   min-height: 100vh;      /* 不支持 dvh 的旧内核兜底 */
   min-height: 100dvh;     /* 移动浏览器地址栏收放后真实可见高度，避免底部内容被遮 */
   /* 毛玻璃内容列：不再是实心白。花园（#garden-bg 0）之上是列形状的磨砂层
-     （#garden-frost 7，blur 副本），这层只铺 45% 白让磨砂后的花园透出来；
+     （#garden-frost 7，blur 副本），这层铺 90% 白——磨砂后的花园只透 10% 进来
+     （用户看过 45% 的版本后要求加浓）。
      帖子本体的白底也一并改透明，否则磨砂只看得见帖子之间的缝。
      z-index:8 压过磨砂层 7，并被雪/花瓣画布（9/10）盖住——雪落在玻璃前面。 */
-  background: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.9);
   position: relative;
   z-index: 8;
 }
