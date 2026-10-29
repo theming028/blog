@@ -178,6 +178,21 @@ PATCH 打回 400，而不是忽略那一列。
   toast/viewer/mask）照旧在其上。
 - 移动端隐藏靠 `@media (min-width:720px)` 门控：窄屏连背景图的下载都不发生。
 
+### 花园蝴蝶
+
+`fx=blossom` 时（且仅桌面 ≥720px、`prefers-reduced-motion` 未开启）花园里出现 3 只蝴蝶，
+素材与飞行动画同样取自 hibi.garden 的 MIT 仓库：实现 `public/js/butterflies.js` +
+`public/css/butterflies.css`，精灵 `public/img/fly/*.webp`（5 种蝴蝶 + 影子，约 90KB）。
+
+- 与原站一致的机制：栖息生命周期（落在花园装饰的 `[data-perch]` 点上）、指针靠近 110px
+  （点击 160px）惊飞、三次贝塞尔滑翔 + 抬升摆动 + 朝向跟随、影子随升力收窄漂移、
+  12fps 定格帧时钟（像逐格动画）。
+- 博客侧的三点适配：① 数量默认 0、由 `applyFx` 通过 `body.dataset.butterflies` 驱动（原站默认 3）；
+  ② 原站蝴蝶落定后就一直待着（靠故事脚本放飞），博客没有章节系统，改为落定 6–14s 后自发再起飞，
+  飞行参数沿用原站 `release()`；③ 图层 fixed（视口坐标）+ `window.Butterflies` 入口。
+- 性能：transform-only、同时最多 2 只在飞、rAF 只在飞行/悬停期间运行；
+  手机与减弱动效下整个图层 `display:none`，零成本。
+
 ## 音视频
 
 一条内容可挂最多 3 段 HTML5 音视频，**只存外链地址，本站不托管媒体文件**：
