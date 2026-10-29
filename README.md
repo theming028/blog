@@ -163,6 +163,21 @@ CREATE TABLE IF NOT EXISTS ip_geo_cache (
 PATCH 打回 400，而不是忽略那一列。
 
 
+## 首屏花园背景
+
+桌面端（≥720px）的页面背景是一座分层花园：天空/云/远山/草坪/树/长椅/路灯/薰衣草，
+静态、无任何 JS 与动画，仅在内容列两侧留白与页面上下露出，移动端（<720px）整层不渲染。
+
+**素材与几何来自 [hibi.garden](https://www.hibi.garden/) 的开源官网 [hibigarden/site](https://github.com/hibigarden/site)（MIT License，Copyright (c) 2026 schmayterling）**，
+实现见 `public/css/garden-bg.css`（头注含许可声明）与 `public/img/garden/*.webp`（日间图层 11 张，约 684KB）。
+按 MIT 要求保留版权与许可声明；如需移除该背景，删掉 `index.html` 里的 `#garden-bg` 块与对应 CSS 链接即可。
+
+- 静态无动画：视差/漂移/闪烁与驱动它们的 `garden.js` 都没有引入，一次绘制、零每帧成本；
+  实测稳态交付帧率与无背景时相同（首屏加载有一次图片解码，属一次性开销）。
+- 层叠：`#garden-bg` fixed z-index:0，排在 `.phone` 之前，内容列与全部交互层（.cbar 7、雪画布 5,6、
+  toast/viewer/mask）照旧在其上。
+- 移动端隐藏靠 `@media (min-width:720px)` 门控：窄屏连背景图的下载都不发生。
+
 ## 音视频
 
 一条内容可挂最多 3 段 HTML5 音视频，**只存外链地址，本站不托管媒体文件**：

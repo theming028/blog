@@ -6,8 +6,28 @@
 <title>朝夕光年 · Ming的光影年华</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="/css/wx.css">
+<!-- 首屏花园背景：改编自 hibi.garden（MIT）© schmayterling，静态日间版，仅桌面显示。
+     素材与几何说明见 /css/garden-bg.css 头注与 README。 -->
+<link rel="stylesheet" href="/css/garden-bg.css">
 </head>
 <body>
+<!-- 花园必须排在 .phone 之前：两者都是定位元素、按 DOM 顺序绘制，靠后的 .phone 才能压住它 -->
+<div id="garden-bg" aria-hidden="true">
+  <div class="g-scene">
+    <i class="g-layer g-sky"></i>
+    <i class="g-sun"></i>
+    <i class="g-layer g-clouds g-clouds-far"></i>
+    <i class="g-layer g-clouds g-clouds-mid"></i>
+    <i class="g-layer g-clouds g-clouds-near"></i>
+    <i class="g-layer g-far"></i>
+    <i class="g-layer g-lawn"></i>
+    <i class="g-layer g-trees"></i>
+    <i class="g-layer g-tree"></i>
+    <i class="g-layer g-lamp"></i>
+    <i class="g-layer g-lavender"></i>
+    <i class="g-layer g-bench"></i>
+  </div>
+</div>
 <div class="phone">
 
   <!-- 顶部导航 -->
