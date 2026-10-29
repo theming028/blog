@@ -24,6 +24,7 @@ body {
   --wx-green: #07C160;
   --wx-red: #FA5151;
   --phone-w: 760px;    /* 版面宽度唯一来源：.phone 与 .nav 都引用它，避免两处各写一份而走偏 */
+  --nav-h: 48px;       /* 导航条高度唯一来源：.nav 本体与 .nav-btn 触控区都引用它（按钮高度不跟就会比条带矮 4px，图标偏上 2px） */
 }
 
 img { -webkit-user-drag: none; }
@@ -42,14 +43,17 @@ input, textarea, select { font-family: inherit; }
 }
 
 /* ============ 顶部导航栏 ============ */
+/* 玻璃层从 .nav 本体挪到 .nav::before：遮罩只能作用在"背景层"上，
+   挂在 .nav 上会连标题文字一起淡出（实测文字亮度从 255 掉到 226）。
+   .nav 有 position:fixed + z-index:100，自成层叠上下文，所以伪元素用
+   z-index:-1 就能待在文字之下、又不会被页面内容盖住（少了层叠上下文，
+   z-index:-1 会掉到页面背景底下，整块玻璃直接看不见——实测过）。 */
 .nav {
   position: fixed; top: 0; left: 0; right: 0; margin: 0 auto;
   width: 100%; max-width: var(--phone-w); /* 与 .phone 同 token，版面加宽时不会错位 */
   /* viewport-fit=cover 下必须自己让出刘海/状态栏高度，否则标题被压住 */
-  height: calc(44px + env(safe-area-inset-top));
+  height: calc(var(--nav-h) + env(safe-area-inset-top));
   padding-top: env(safe-area-inset-top);
-  background: rgba(24, 24, 24, .55);
-  -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%);
   z-index: 100; color: #fff;
   display: flex; align-items: center; justify-content: center;
   font-size: 16px; font-weight: 600;
@@ -57,11 +61,24 @@ input, textarea, select { font-family: inherit; }
   opacity: 1;
   transition: opacity .25s ease, visibility .25s ease;
 }
+/* 从上到下渐隐的毛玻璃：mask 与 backdrop-filter 同挂这一层。
+   ⚠️ Chrome 156 实测：遮罩不透明度过低时磨砂会被丢掉——过渡带硬边的
+   模糊宽度在 mask 线性档下是 26→0，到条带 50% 高度就完全不再模糊，
+   只剩深色底继续淡出（所以"线性两色"的渐隐只覆盖上半条）。
+   要玻璃活得更久就把起点抬高：black 40% 到 ~70% 才化开、black 65% 到 ~88%。
+   这三档都实测过，最大台阶 ≤6px/2px 行，没有断层。 */
+.nav::before {
+  content: ""; position: absolute; inset: 0; z-index: -1;
+  background: rgba(24, 24, 24, .55);
+  -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%);
+  -webkit-mask-image: linear-gradient(black, transparent); mask-image: linear-gradient(black, transparent);
+}
 /* 开始滚动即整条渐隐。visibility 是为了隐藏后不再接收点击、也不被键盘聚焦；
  * 只靠 opacity 会留下一层"看不见但点得到"的透明挡板。 */
 .nav.hide { opacity: 0; visibility: hidden; }
 .nav .nav-btn {
-  position: absolute; top: env(safe-area-inset-top); width: 44px; height: 44px;
+  /* 宽 44px 是触控目标下限，与条带高度无关，不跟着 --nav-h 走；高必须跟，否则图标偏上 */
+  position: absolute; top: env(safe-area-inset-top); width: 44px; height: var(--nav-h);
   display: flex; align-items: center; justify-content: center;
   cursor: pointer;
 }
