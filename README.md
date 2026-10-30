@@ -178,23 +178,6 @@ PATCH 打回 400，而不是忽略那一列。
   toast/viewer/mask）照旧在其上。
 - 移动端隐藏靠 `@media (min-width:720px)` 门控：窄屏连背景图的下载都不发生。
 
-### 花园蝴蝶
-
-`fx=blossom` 时（且仅桌面 ≥720px、`prefers-reduced-motion` 未开启）出现 **10 只自由飞舞的蝴蝶**，
-素材与飞行内核同样取自 hibi.garden 的 MIT 仓库：实现 `public/js/butterflies.js` +
-`public/css/butterflies.css`，精灵 `public/img/fly/*.webp`（5 种蝴蝶 + 影子，约 90KB）。
-
-- 为什么不是原站 butterflies.js 那套：实测线上 `data-butterflies=0`，那套"停在花上、指针惊飞"
-  的系统几乎不出场；让人记住"蝴蝶在随意飞舞"的是 **companion.js**——12fps 定格帧上的自由飞模拟：
-  巡航按"身位/秒"计、振翅-滑翔步态（滑翔下沉、下挥抬起）、之字形航向、转弯侧倾、翅膀内外差、
-  影子随升力漂移，且永不穿过正文。这套物理内核逐行保留。
-- 博客侧适配：一只伴飞 → 10 只混编群（4 蓝灰粉小粉 + 各一morpho/peacock，0.5–0.72 倍体型）；
-  图层 fixed 在视口；A* 绕文本网格退化为"到 `.phone` 信息流列矩形的解析式带符号距离"，
-  贴边滑行逻辑原样保留；40% 概率落花园装饰（`[data-perch]`）晒太阳，60% 在两侧留白里
-  挑自由点、到了缓一拍再飞下一处；保留指针惊飞（110px）。
-- 数量由 `applyFx` 驱动：`body.dataset.butterflies = 10 / 0` + `butterflies:sync` 事件。
-- 性能：transform-only、12fps 定格帧、群空即时退订时钟；窄屏与减弱动效下整层 `display:none`。
-
 ## 音视频
 
 一条内容可挂最多 3 段 HTML5 音视频，**只存外链地址，本站不托管媒体文件**：
