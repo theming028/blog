@@ -139,10 +139,40 @@
 }
 .mu-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-/* ---------------- 移动端：只留悬浮球，不展开面板 ---------------- */
+/* ---------------- 移动端：点球后"绽放"成卡片 ----------------
+ * 面板的缩放原点由 JS 精确设在球心（--mu-ox/--mu-oy），所以视觉上是从球本身
+ * 长出一张卡，而不是"某个面板凭空出现"；球里的封面与卡里的封面是同一张图，
+ * 空间连续。关闭走手势：上滑卡片（顶部把手提示）或点卡片以外区域。
+ * 只用 transform/opacity，不碰布局属性，符合本站特效的性能约束。 */
+.mu-handle {
+  display: none; width: 36px; height: 4px; border-radius: 2px;
+  background: #E3E3E3; margin: -2px auto 9px;
+}
+
 @media (max-width: 719px) {
   .mu-fab { width: 42px; height: 42px; }
-  .mu-panel { display: none; }
+  .mu-panel {
+    width: min(272px, calc(100vw - 28px));
+    transform-origin: var(--mu-ox, 100%) var(--mu-oy, 0px);
+  }
+  .mu.is-open .mu-panel { animation: muBloom .24s cubic-bezier(.22, .8, .28, 1) both; }
+  .mu.is-closing .mu-panel { animation: muTuck .17s ease-in both; }
+  @keyframes muBloom {
+    from { opacity: 0; transform: scale(.15); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+  @keyframes muTuck {
+    from { opacity: 1; transform: scale(1); }
+    to   { opacity: 0; transform: scale(.15); }
+  }
+  .mu-handle { display: block; }
+  /* 手机音量由系统侧键控制，面板里再放一个音量键是无效控件 */
+  .mu-volwrap { display: none; }
+  .mu-ctrls { gap: 10px; }
+  .mu-btn { width: 36px; height: 36px; }
+  .mu-play { width: 42px; height: 42px; }
+  /* 触摸目标变大后，进度条也要跟着加厚一点才好拖 */
+  .mu-bar { height: 20px; }
 }
 
 /* ---------------- 减弱动效：唱片不转、面板不做位移动画 ---------------- */

@@ -285,6 +285,20 @@ const MIME = {
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
   '.woff2': 'font/woff2',
+  /* 音频/视频类型此前一个都没有：站内自托管的 .wav 会以 application/octet-stream 下发，
+     浏览器虽然多半仍能播，但类型不对会让部分客户端拒绝内联播放（当成下载）。 */
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.oga': 'audio/ogg',
+  '.m4a': 'audio/mp4',
+  '.aac': 'audio/aac',
+  '.flac': 'audio/flac',
+  '.mp4': 'video/mp4',
+  '.m4v': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mov': 'video/quicktime',
+  '.ogv': 'video/ogg',
 };
 
 function sendJson(res, code, obj) {
@@ -359,7 +373,9 @@ function assetVer(full, st) {
   return ver;
 }
 
-const IMG_FONT_EXT = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.svg', '.ico', '.woff', '.woff2', '.ttf', '.otf'];
+const IMG_FONT_EXT = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.svg', '.ico', '.woff', '.woff2', '.ttf', '.otf',
+  '.mp3', '.wav', '.ogg', '.oga', '.m4a', '.aac', '.flac', '.mp4', '.m4v', '.webm', '.mov', '.ogv'];
+const RANGE_RE = /^\s*bytes\s*=\s*(\d*)\s*-\s*(\d*)\s*$/i;
 
 /** 给 HTML 里的 /js/*、/css/* 引用补版本号，并替封面/头像把 src 提前写进文档 */
 function transformHtml(html) {
@@ -425,13 +441,44 @@ function serveStatic(req, res, filePath) {
     || (Number.isFinite(imsSec) && imsSec >= mtimeSec);
   const base = { ETag: etag, 'Last-Modified': lastModified, ...SECURITY_HEADERS };
   if (notModified) { res.writeHead(304, base); return res.end(); }
-  res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': cachePolicy(ext, req.url), ...base });
-  if (req.method === 'HEAD') return res.end(); // HEAD 只回头部，不能吐 body
-  fs.createReadStream(filePath)
-    .on('error', () => {
-      if (!res.headersSent) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', ...SECURITY_HEADERS }); res.end('Not Found'); }
-      else res.destroy(); // 头已发出就不能再往里写正文，只能断流
-    })
+  const cache = cachePolicy(ext, req.url);
+
+  const sendFull = () => {
+    res.writeHead(200, { 'Content-Type': mime, 'Content-Length': st.size, 'Accept-Ranges': 'bytes', 'Cache-Control': cache, ...base });
+    if (req.method === 'HEAD') return res.end(); // HEAD 只回头部，不能吐 body
+    fs.createReadStream(filePath)
+      .on('error', () => {
+        if (!res.headersSent) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', ...SECURITY_HEADERS }); res.end('Not Found'); }
+        else res.destroy(); // 头已发出就不能再往里写正文，只能断流
+      })
+      .pipe(res);
+  };
+
+  /* Range 分段响应（206）：音频/视频拖动进度条完全依赖它。
+     实测缺这段时，站内自托管的音频在 Chrome 里点进度条毫无反应——浏览器发 Range，
+     我们回 200 全量，它拿不到 206 就放弃 seek。图片不需要 seek，但一并支持更合规。 */
+  const rm = RANGE_RE.exec(req.headers.range || '');
+  if (!rm) return sendFull();
+  let start, end;
+  if (rm[1] === '') {
+    if (rm[2] === '') return sendFull();                       // "bytes=-" 无意义，退回全量
+    const n = Math.min(parseInt(rm[2], 10), st.size);          // bytes=-N：末尾 N 字节
+    start = st.size - n; end = st.size - 1;
+  } else {
+    start = parseInt(rm[1], 10);
+    end = rm[2] === '' ? st.size - 1 : Math.min(parseInt(rm[2], 10), st.size - 1);
+  }
+  if (start >= st.size || start > end) {
+    res.writeHead(416, { 'Content-Range': `bytes */${st.size}`, ...base });
+    return res.end();
+  }
+  res.writeHead(206, {
+    'Content-Type': mime, 'Content-Range': `bytes ${start}-${end}/${st.size}`,
+    'Content-Length': end - start + 1, 'Accept-Ranges': 'bytes', 'Cache-Control': cache, ...base,
+  });
+  if (req.method === 'HEAD') return res.end();
+  fs.createReadStream(filePath, { start, end })
+    .on('error', () => res.destroy())   // 头已发出，只能断流
     .pipe(res);
 }
 

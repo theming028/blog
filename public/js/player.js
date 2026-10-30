@@ -48,6 +48,7 @@
     root.className = 'mu';
     root.innerHTML =
       '<div class="mu-panel" id="musicPanel" role="dialog" aria-label="背景音乐播放器" aria-hidden="true">' +
+        '<div class="mu-handle" aria-hidden="true"></div>' +
         '<div class="mu-now">' +
           '<div class="mu-cover" id="musicCover"></div>' +
           '<div class="mu-meta"><div class="mu-title" id="musicTitle">—</div><div class="mu-artist" id="musicArtist"></div></div>' +
@@ -73,6 +74,7 @@
     document.body.appendChild(root);
     els = {
       panel: root.querySelector('#musicPanel'), cover: root.querySelector('#musicCover'),
+      handle: root.querySelector('.mu-handle'),
       title: root.querySelector('#musicTitle'), artist: root.querySelector('#musicArtist'),
       bar: root.querySelector('#musicBar'), fill: root.querySelector('#musicFill'),
       knob: root.querySelector('.mu-knob'),
@@ -150,7 +152,7 @@
     audio.addEventListener('timeupdate', paintProgress);
     audio.addEventListener('ended', () => step(true));
     audio.addEventListener('error', onAudioError);
-    audio.addEventListener('play', () => { playing = true; failed = 0; paintPlay(); });
+    audio.addEventListener('play', () => { playing = true; failed = 0; paintPlay(); if (gestureArmed) disarmGesture(); });
     audio.addEventListener('pause', () => { if (!audio.ended) { playing = false; paintPlay(); } });
     return audio;
   }
@@ -262,15 +264,63 @@
     if (hintEl) { hintEl.remove(); hintEl = null; }
   }
 
-  /* ---------------- 面板开合 ---------------- */
-  let open = false;
+  /* ---------------- 面板开合 ----------------
+   * 移动端：点球"绽放"出卡片（缩放原点在球心），上滑把手或点卡片外区域收起。
+   * 桌面：点球开合，Esc 收起。 */
+  let open = false, closingTimer = 0, outsideArmed = false;
+
+  /* 把缩放原点设到球心（面板自身坐标），卡片才是从球"长"出来的而非凭空出现 */
+  function setBloomOrigin() {
+    if (!PHONE.matches) return;
+    const b = els.fab.getBoundingClientRect(), p = els.panel.getBoundingClientRect();
+    if (!p.width || !p.height) return;
+    els.panel.style.setProperty('--mu-ox', Math.round(b.left + b.width / 2 - p.left) + 'px');
+    els.panel.style.setProperty('--mu-oy', Math.round(b.top + b.height / 2 - p.top) + 'px');
+  }
+  function outsideTap(e) { if (root && root.contains(e.target)) return; setOpen(false); }
+  function armOutside() { if (outsideArmed) return; outsideArmed = true; document.addEventListener('pointerdown', outsideTap, true); }
+  function disarmOutside() { if (!outsideArmed) return; outsideArmed = false; document.removeEventListener('pointerdown', outsideTap, true); }
+
   function setOpen(v) {
-    if (PHONE.matches && v) return;             // 移动端不提供展开面板
+    if (open === v) return;
+    clearTimeout(closingTimer);
     open = v;
-    if (v) layoutPanel();                       // 先定好朝哪边展开，再显示，避免闪一下错位
-    root.classList.toggle('is-open', open);
+    if (v) {
+      layoutPanel();          // 先定好朝哪边展开，再据实际位置算绽放原点，否则会闪一下错位
+      setBloomOrigin();
+      root.classList.remove('is-closing');
+      root.classList.add('is-open');
+      if (PHONE.matches) armOutside();
+    } else {
+      root.classList.remove('is-open');
+      disarmOutside();
+      if (PHONE.matches) {   // 收起要"缩回球里"，不能直接消失
+        root.classList.add('is-closing');
+        closingTimer = setTimeout(() => root && root.classList.remove('is-closing'), 200);
+      }
+    }
     els.panel.setAttribute('aria-hidden', open ? 'false' : 'true');
     els.fab.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
+  /* 顶部把手：上滑收起，跟手位移给即时反馈；没滑够就弹回 */
+  function bindSwipeClose() {
+    els.handle.addEventListener('pointerdown', (e) => {
+      if (!PHONE.matches) return;
+      const y0 = e.clientY;
+      let dy = 0;
+      const mv = (ev) => { dy = Math.min(0, ev.clientY - y0); els.panel.style.transform = 'translateY(' + dy + 'px)'; };
+      const up = () => {
+        document.removeEventListener('pointermove', mv);
+        document.removeEventListener('pointerup', up);
+        document.removeEventListener('pointercancel', up);
+        els.panel.style.transform = '';
+        if (dy < -34) setOpen(false);
+      };
+      document.addEventListener('pointermove', mv);
+      document.addEventListener('pointerup', up);
+      document.addEventListener('pointercancel', up);
+    });
   }
 
   function seekFromEvent(e) {
@@ -286,9 +336,17 @@
   /* ---------------- 事件绑定 ---------------- */
   function bind() {
     initDrag();
+    bindSwipeClose();
     els.fab.addEventListener('click', () => {
       if (els.fab._dragSuppressed && els.fab._dragSuppressed()) return;   // 刚拖完，吞掉浏览器补发的 click
-      if (PHONE.matches) toggle(); else setOpen(!open);
+      if (PHONE.matches) {
+        if (open) { setOpen(false); return; }
+        setOpen(true);
+        // 自动播放被拦时，移动端这一次点击顺手开播——不该让用户点两下才听到声音
+        if (wantAutoplay && audio && audio.paused) attemptPlay(false);
+        return;
+      }
+      setOpen(!open);
     });
     els.play.addEventListener('click', toggle);
     els.prev.addEventListener('click', () => load(idx - 1, true));
@@ -301,7 +359,12 @@
       ls.set(LS.vol, String(v));
     });
     let dragging = false;
-    els.bar.addEventListener('pointerdown', (e) => { dragging = true; els.bar.setPointerCapture(e.pointerId); seekFromEvent(e); });
+    els.bar.addEventListener('pointerdown', (e) => {
+      dragging = true;
+      // 同悬浮球：合成事件没有活动指针，捕获会抛并让整个 seek 处理中断
+      try { els.bar.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+      seekFromEvent(e);
+    });
     els.bar.addEventListener('pointermove', (e) => { if (dragging) seekFromEvent(e); });
     els.bar.addEventListener('pointerup', () => { dragging = false; });
     els.bar.addEventListener('keydown', (e) => {
@@ -410,7 +473,7 @@
   }
 
   function destroy() {
-    disarmGesture(); hideHint();
+    disarmGesture(); disarmOutside(); hideHint(); clearTimeout(closingTimer);
     if (audio) { audio.pause(); audio.src = ''; }
     if (root) { root.remove(); root = null; audio = null; els = {}; idx = -1; playing = false; open = false; booted = false; }
   }

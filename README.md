@@ -221,7 +221,7 @@ UPDATE posts SET media = '[]'::jsonb WHERE media IS NULL;
 ## 背景音乐播放器
 
 后台左侧导航**独立的「播放器」模块**（自己的视图与保存键，不挤在设置页里）：开关 + 歌单增删改排序。
-前台是右下角悬浮球，点开在上方弹出卡片面板。实现 `public/js/player.js` +
+前台是右上角悬浮球，点开"绽放"出卡片面板（移动端同样可展开，见下）。实现 `public/js/player.js` +
 `public/css/player.css`，功能面参照 abcdtfk.icu 的 `persistent-player`
 （悬浮球 + 封面/曲名/艺人/进度/循环模式/上下曲/音量），**代码与样式全部自研，未使用对方代码或素材**。
 
@@ -252,6 +252,17 @@ UPDATE posts SET media = '[]'::jsonb WHERE media IS NULL;
 - **可按住拖动**，位置**不做持久化**（只写内联 style，刷新回默认）：5px 位移阈值区分点击与
   拖动，拖动结束吞掉浏览器补发的 `click`；触屏必须 `touch-action: none`，否则按住被当成
   页面滚动拖不动；夹取在视口内；面板方向自适应（下方放不下翻向上方、向左放不下改向右展开）。
+- **移动端点球"绽放"出卡片**（面板缩放原点由 JS 精确设在球心，视觉上是从球本身长出一张卡，
+  球里的封面与卡里的封面同图，空间连续）；收起走手势——上滑顶部把手（跟手位移、不够则弹回）
+  或点卡片以外区域，收起动画是缩回球里而非直接消失。触摸目标加大到 36–42px、进度条加厚到 20px，
+  音量控件在移动端隐藏（手机音量交给系统侧键，留着就是无效控件）。
+  全程只用 `transform`/`opacity`，不触发布局，符合本站特效的性能约束。
+- **静态资源现已支持 HTTP Range（206）**：音频/视频拖动进度条完全依赖它。此前 `serveStatic`
+  用 `createReadStream` 直发全量、忽略 `Range` 头，实测站内自托管音频在 Chrome 里
+  点进度条毫无反应。现在支持 `bytes=a-b`、`bytes=a-`、`bytes=-N`（后缀范围），越界回 416，
+  无 Range 头回 200 并带 `Accept-Ranges: bytes`。**同时补齐了音视频 MIME**——
+  原先表里一个都没有，`.wav` 会以 `application/octet-stream` 下发，部分客户端会当下载处理。
+  这条也是"外链源站必须支持 Range 才能拖进度条"那个约束的自证：我们自己的站以前就不支持。
 - **只存外链，不存音频**：`settings.playlist` 每项只有 `{id,title,artist,url,cover,autoplay}`，
   地址走 `safeHttpUrl`（协议白名单 + 抹掉 `good.com@evil.com` 内嵌凭证），标题必填、
   长度截断、最多 50 首。`db.json` 已内嵌 base64 图片，再塞音频会让每次发布重传几十 MB。
