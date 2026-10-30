@@ -1,0 +1,27 @@
+[Unit]
+Description=朋友圈风格个人博客 (moments-blog)
+Documentation=https://github.com/theming028/blog
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=blog
+Group=blog
+WorkingDirectory=/opt/blog
+# 只监听回环，公网入口交给 Nginx；端口与反代 upstream 必须一致
+Environment=PORT=8081
+Environment=HOST=127.0.0.1
+ExecStart=/usr/local/bin/node /opt/blog/server.js
+Restart=always
+RestartSec=3
+# 无依赖项目，不需要 npm install；进程只需读代码、写 data/
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/blog/data
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

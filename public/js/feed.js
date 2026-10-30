@@ -102,13 +102,13 @@ function renderPost(p) {
 
   let imgHtml = '';
   if (p.images.length === 1) {
-    imgHtml = `<div class="p-single"><img src="${imgUrl(p.images[0])}" data-pid="${p.id}" data-idx="0" loading="lazy" alt=""></div>`;
+    imgHtml = `<div class="p-single"><img src="${imgUrl(p.images[0])}" data-pid="${p.id}" data-idx="0" loading="lazy" decoding="async" alt=""></div>`;
   } else if (p.images.length > 1) {
     // 2 张与 4 张走两列：三列布局下 2 张只占容器 2/3 宽，两列才与单图（.p-single 撑满）同宽
     const twoUp = p.images.length === 2 || p.images.length === 4;
     const cls = twoUp ? 'p-grid cols-2' : 'p-grid';
     imgHtml = `<div class="${cls}">` + p.images.map((im, i) =>
-      `<img src="${imgUrl(im)}" data-pid="${p.id}" data-idx="${i}" loading="lazy" alt="">`).join('') + '</div>';
+      `<img src="${imgUrl(im)}" data-pid="${p.id}" data-idx="${i}" loading="lazy" decoding="async" alt="">`).join('') + '</div>';
   }
 
   const locHtml = p.location
@@ -889,13 +889,14 @@ async function loadLinks() {
 
 (async () => {
   buildEmojiPanel();
-  await loadSettings();
   checkAdmin();
   loadLinks();
   loadVisitors();            // 不 await：页脚计数不该挡信息流
-  try {
-    await loadPosts(1);
-  } catch (e) {
-    $('#feed').innerHTML = `<div class="loading">加载失败：${esc(e.message)}</div>`;
-  }
+  /* 设置与信息流互不依赖，原先 `await loadSettings()` 再 loadPosts 是白等一个来回；
+     跨境链路上一个 RTT 约 400ms，并行掉它就是一次实打实的提前。
+     两边各自兜底：设置取不到用默认值，只有帖子取不到才提示加载失败。 */
+  await Promise.all([
+    loadSettings(),
+    loadPosts(1).catch((e) => { $('#feed').innerHTML = `<div class="loading">加载失败：${esc(e.message)}</div>`; }),
+  ]);
 })();

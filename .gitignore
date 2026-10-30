@@ -13,6 +13,9 @@ data/images/
 # 一次性运维脚本（已作为文件卡交付给用户，保留在项目里但不入库）
 tools-pull-live-data.js
 
+# 部署用的数据暂存副本（当前线上服务器那份 db.json，5MB+，不入库也不该进发布包）
+deploy/db.server.json
+
 # 依赖与日志（本项目零依赖，正常不会出现）
 node_modules/
 *.log

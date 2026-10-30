@@ -285,12 +285,97 @@ function readBody(req, limitMB = 20) {
   });
 }
 
-/* 缓存策略：html/css/js 每次带校验器重新验证（改动即时可见，命中 304 只走头部）；
- * 图片和字体仍可缓存 300 秒，它们按内容命名、不会原地变。 */
+/* 只回白名单键：settings 里还有服务端自用的标记（如 _migrated），不能整包吐给浏览器 */
+function publicSettings(raw) {
+  const stored = { ...(raw || {}) };
+  /* 旧版只有一个 snow: 'on' | 'off' 开关。在读取边界上一次性翻译成 fx，
+     之后客户端只认 fx——避免两个键各说一套、改了一个另一个还留着旧值。 */
+  if (stored.fx === undefined && stored.snow !== undefined) {
+    stored.fx = String(stored.snow).trim() === 'off' ? 'off' : 'snow';
+  }
+  const merged = { ...DEFAULT_SETTINGS, ...stored };
+  if (FX_VALUES.indexOf(String(merged.fx).trim()) < 0) merged.fx = DEFAULT_SETTINGS.fx;
+  else merged.fx = String(merged.fx).trim();
+  const out = {};
+  for (const k of PUBLIC_SETTING_KEYS) out[k] = merged[k];
+  return out;
+}
+
+/* 注入首页用的公开设置快照：后台定时刷新，绝不挂在请求路径上——
+   Supabase 驱动下 getSettings() 是一次网络往返，串进 HTML 响应会让首字节更晚。 */
+let publicCache = null;
+async function refreshPublicCache() {
+  try { publicCache = publicSettings(await store.getSettings()); } catch (e) { /* 留着上一份，别让一次读失败把封面打回空 */ }
+}
+
+/* 资源版本号：按内容哈希。文件名不变而内容变了 URL 也跟着变，
+   于是 js/css 可以放心给一年 immutable，不必每次打开都回源验证一轮。
+   跨境链路一个 RTT 约 400ms，一次打开省掉 8 次验证 ≈ 3.2 秒。 */
+const verMemo = new Map(); // filePath -> { key, ver }
+function assetVer(full, st) {
+  const key = st.mtimeMs + ':' + st.size;
+  const hit = verMemo.get(full);
+  if (hit && hit.key === key) return hit.ver;
+  let ver;
+  try { ver = crypto.createHash('sha256').update(fs.readFileSync(full)).digest('hex').slice(0, 10); }
+  catch (e) { return null; }
+  verMemo.set(full, { key, ver });
+  return ver;
+}
+
+const IMG_FONT_EXT = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.svg', '.ico', '.woff', '.woff2', '.ttf', '.otf'];
+
+/** 给 HTML 里的 /js/*、/css/* 引用补版本号，并替封面/头像把 src 提前写进文档 */
+function transformHtml(html) {
+  html = html.replace(/((?:href|src)=")(\/(?:js|css)\/[^"?]+)(")/g, (m, pre, p, post) => {
+    const full = path.normalize(path.join(PUBLIC_DIR, p.slice(1)));
+    if (!full.startsWith(PUBLIC_DIR + path.sep)) return m;
+    let st;
+    try { st = fs.statSync(full); } catch (e) { return m; }
+    if (!st.isFile()) return m;
+    const v = assetVer(full, st);
+    return v ? pre + p + '?v=' + v + post : m;
+  });
+  const s = publicCache || {};
+  // 只有拿到值才写 src：src="" 会让浏览器去请求当前页面本身
+  const fill = (attrs, val) => (val && !/\bsrc=/.test(attrs) ? `<img${attrs} src="${String(val).replace(/"/g, '&quot;')}">` : `<img${attrs}>`);
+  for (const [id, val] of [['coverImg', s.cover], ['coverAvatar', s.avatar]]) {
+    html = html.replace(new RegExp('<img([^>]*\\bid="' + id + '"[^>]*)>'), (m, attrs) => fill(attrs, val));
+  }
+  return html;
+}
+
+/* 缓存策略分级：
+ *  - html：no-cache（它带着新版本号，必须每次验证）
+ *  - js/css：带 ?v= 给一年 immutable；没带（旧链接、直接敲 URL）退回 no-cache 验证
+ *  - 图片/字体：按名字不变，给一天——比原来的 300 秒少几十次回源
+ *  - /api/images/ 另走一路，本来就是 immutable 一年 */
+function cachePolicy(ext, url) {
+  if (ext === '.html') return 'no-cache';
+  if (ext === '.js' || ext === '.css') return /[?&]v=/.test(url) ? 'public, max-age=31536000, immutable' : 'no-cache';
+  if (IMG_FONT_EXT.includes(ext)) return 'public, max-age=86400';
+  return 'public, max-age=300';
+}
+
+function sendHtml(req, res, filePath, st) {
+  let html;
+  try { html = fs.readFileSync(filePath, 'utf8'); } catch (e) { res.writeHead(404); return res.end('Not Found'); }
+  const body = Buffer.from(transformHtml(html), 'utf8');
+  // ETag 必须按改写后的正文算：换了封面而文件 mtime 没变时，用文件指纹会让客户端继续拿旧页
+  const etag = `W/"${crypto.createHash('sha1').update(body).digest('hex').slice(0, 16)}"`;
+  const incs = req.headers['if-none-match'];
+  const base = { ETag: etag, 'Last-Modified': new Date(Math.floor(st.mtimeMs)).toUTCString(), ...SECURITY_HEADERS };
+  if (incs && incs.split(',').map((s) => s.trim()).includes(etag)) { res.writeHead(304, base); return res.end(); }
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache', 'Content-Length': body.length, ...base });
+  if (req.method === 'HEAD') return res.end();
+  res.end(body);
+}
+
 function serveStatic(req, res, filePath) {
   let st;
   try { st = fs.statSync(filePath); } catch (e) { res.writeHead(404); return res.end('Not Found'); }
   const ext = path.extname(filePath).toLowerCase();
+  if (ext === '.html') return sendHtml(req, res, filePath, st);
   const mime = MIME[ext] || 'application/octet-stream';
   const mtimeMs = Math.floor(st.mtimeMs);
   const etag = `W/"${st.size.toString(16)}-${mtimeMs.toString(16)}"`;
@@ -304,8 +389,7 @@ function serveStatic(req, res, filePath) {
     || (Number.isFinite(imsSec) && imsSec >= mtimeSec);
   const base = { ETag: etag, 'Last-Modified': lastModified, ...SECURITY_HEADERS };
   if (notModified) { res.writeHead(304, base); return res.end(); }
-  const cache = ['.html', '.css', '.js'].includes(ext) ? 'no-cache' : 'public, max-age=300';
-  res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': cache, ...base });
+  res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': cachePolicy(ext, req.url), ...base });
   if (req.method === 'HEAD') return res.end(); // HEAD 只回头部，不能吐 body
   fs.createReadStream(filePath)
     .on('error', () => {
@@ -653,22 +737,8 @@ async function handleApi(req, res, pathname, query) {
   }
 
   /* 只回白名单键：settings 里还有服务端自用的标记（如 _migrated），不能整包吐给浏览器 */
-  const publicSettings = (raw) => {
-    const stored = { ...(raw || {}) };
-    /* 旧版只有一个 snow: 'on' | 'off' 开关。这里在读取边界上一次性翻译成 fx，
-       之后客户端只认 fx——避免两个键各说一套、改了一个另一个还留着旧值。
-       历史数据里残留的 snow 不再对外输出，也不参与判断。 */
-    if (stored.fx === undefined && stored.snow !== undefined) {
-      stored.fx = String(stored.snow).trim() === 'off' ? 'off' : 'snow';
-    }
-    const merged = { ...DEFAULT_SETTINGS, ...stored };
-    // 值可能被手改坏（拼错、大小写），统一收敛到合法值，前端不必再兜
-    if (FX_VALUES.indexOf(String(merged.fx).trim()) < 0) merged.fx = DEFAULT_SETTINGS.fx;
-    else merged.fx = String(merged.fx).trim();
-    const out = {};
-    for (const k of PUBLIC_SETTING_KEYS) out[k] = merged[k];
-    return out;
-  };
+  /* publicSettings 已上提到模块作用域：首页要把封面/头像直接写进 HTML，
+     那边也得用同一个收敛逻辑，不能留两份各自演进的副本。 */
 
   if (pathname === '/api/settings' && method === 'GET') {
     const stored = await store.getSettings();
@@ -686,6 +756,9 @@ async function handleApi(req, res, pathname, query) {
       patch[k] = v;
     }
     const saved = await store.setSettings(patch);
+    // 首页 HTML 里注入的封面/头像走的是后台快照，改完设置要立刻刷一次，
+    // 否则管理员换了封面，访客拿到的还是旧图（最长要等到下一个刷新周期）。
+    refreshPublicCache();
     return sendJson(res, 200, { settings: publicSettings(saved) });
   }
 
@@ -871,6 +944,10 @@ server.listen(PORT, HOST, () => {
   console.log(`朋友圈风格个人博客已启动: http://localhost:${PORT}`);
   console.log(`管理后台: http://localhost:${PORT}/admin`);
   bootstrap(); // 不 await：端口先可用，导入在后台进行
+  // 首页注入封面/头像用的设置快照：启动先取一次（拿不到也不挡端口），之后每 30s 兜底刷新。
+  // 30s 只是保险——改设置的路径上已经主动刷过一次，这里防的是有人直接改库。
+  refreshPublicCache();
+  setInterval(refreshPublicCache, 30 * 1000).unref();
   // unref：这个定时器不该吊住进程，也不该被当成"还有活要干"
   setInterval(purgeVisitsQuietly, PURGE_EVERY_MS).unref();
   // 退出前把合并写入窗口里的访问日志落盘（本地 JSON 驱动才有；云端是逐条写入）

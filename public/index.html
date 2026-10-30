@@ -40,7 +40,7 @@
 
   <!-- 封面与昵称/头像/签名一律等 /api/settings 下发；这里不写死任何值，避免和服务端默认值不同步 -->
   <div class="cover">
-    <img class="cover-img" id="coverImg" alt="封面">
+    <img class="cover-img" id="coverImg" alt="封面" fetchpriority="high" decoding="async">
     <div class="cover-name" id="coverName"></div>
     <div class="cover-sign" id="coverSign"></div>
     <!-- 头像与其上的积雪：包一层作定位锚，积雪跟随头像的尺寸与断点自动缩放 -->
