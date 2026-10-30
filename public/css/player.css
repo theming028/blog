@@ -200,3 +200,8 @@
   animation: muHintIn .25s ease both;
 }
 @keyframes muHintIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+/* 面板展开时让位：两者都锚在球下方同一带（提示 top:52px、面板 top:54px），
+   实测提示会压在面板头部上。面板开着时播放键就在眼前，这句提示也没有
+   继续存在的必要——它的作用只是告诉访客"点任意处即可开播"。 */
+.mu.is-open .mu-hint { display: none; }
