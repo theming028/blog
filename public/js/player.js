@@ -159,10 +159,13 @@
 
   function onAudioError() {
     failed++;
-    // 全部曲目都失败一轮就停下：否则 ended/error 互推会变成静默死循环
+    // 全部曲目都失败一轮就停下：否则 error → next → error 会变成静默死循环
     if (failed >= tracks.length) {
       playing = false; failed = 0; paintPlay();
-      toast('暂时无法播放，请稍后再试');
+      /* 提示要能自诊断。只说"暂时无法播放"会把人引向"播放器坏了"，
+         而实际最常见的原因是音频地址取不到（签名 URL 过期、桶是私有读、防盗链）。 */
+      const name = (tracks[idx] && tracks[idx].title) || '当前曲目';
+      toast('《' + name + '》取不到音频，请检查地址是否过期或不可公开访问');
       return;
     }
     step(true);
