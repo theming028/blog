@@ -1,8 +1,20 @@
-/* 背景音乐播放器：右下角悬浮球 + 微信风白色卡片面板。
+/* 背景音乐播放器：右上角悬浮球 + 微信风白色卡片面板。
  * 层级 8：高于内容列与飘落画布（5/6），低于评论浮层 .pop(30)、导航 .nav(100)、
- * toast(260)、大图 viewer(300)、mask(400)。 */
+ * toast(260)、大图 viewer(300)、mask(400)。
+ *
+ * 默认位置在右上角、但落在导航条下方：.nav 是 fixed + z-index 100 且窄屏占满整行，
+ * 球若放在真正的顶角会被导航盖住点不到（本组件层级只有 8）。
+ * 位置不做持久化——拖动只改内联 style，刷新即回到下面这个默认值。 */
 
-.mu { position: fixed; right: 20px; bottom: calc(24px + env(safe-area-inset-bottom)); z-index: 8; font-size: 14px; }
+.mu {
+  position: fixed;
+  top: calc(var(--nav-h, 48px) + env(safe-area-inset-top) + 10px);
+  right: 14px;
+  z-index: 8;
+  font-size: 14px;
+}
+/* 拖动后改用 left/top 定位，必须放开 right——两端同时锚定会被拉回右侧 */
+.mu.is-dragged { right: auto; }
 
 /* ---------------- 悬浮球 ---------------- */
 .mu-fab {
@@ -11,9 +23,14 @@
   background: #fff; color: var(--wx-green, #07C160); cursor: pointer;
   box-shadow: 0 2px 10px rgba(0, 0, 0, .1);
   transition: transform .18s, box-shadow .18s;
+  /* 不写 touch-action:none，触屏按住拖动会被浏览器先当成页面滚动，球根本拖不动 */
+  touch-action: none;
+  -webkit-user-select: none; user-select: none;
 }
 .mu-fab:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(0, 0, 0, .14); }
 .mu-fab:active { transform: translateY(0); box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
+/* 拖动中：放大一档并去掉过渡，跟手比"顺滑"更重要 */
+.mu-fab.is-grabbing { cursor: grabbing; transform: scale(1.06); box-shadow: 0 6px 18px rgba(0, 0, 0, .18); transition: none; }
 .mu-fab:focus-visible { outline: 2px solid var(--wx-green, #07C160); outline-offset: 2px; }
 .mu-fab-disc {
   display: block; width: 100%; height: 100%; border-radius: 50%; overflow: hidden;
@@ -25,15 +42,18 @@
 .mu.is-playing .mu-fab-disc { animation: muSpin 9s linear infinite; }
 @keyframes muSpin { to { transform: rotate(360deg); } }
 
-/* ---------------- 面板 ---------------- */
+/* ---------------- 面板：默认开在球下方，下方空间不够时自动翻到上方 ---------------- */
 .mu-panel {
-  position: absolute; right: 0; bottom: 56px; width: 268px;
+  position: absolute; top: 54px; right: 0; width: 268px;
   padding: 12px 14px 10px; background: #fff;
   border: .5px solid var(--wx-line, #E7E7E7); border-radius: 12px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, .12);
-  opacity: 0; transform: translateY(8px) scale(.98); pointer-events: none;
+  opacity: 0; transform: translateY(-8px) scale(.98); pointer-events: none;
   transition: opacity .18s, transform .18s;
 }
+.mu.panel-up .mu-panel { top: auto; bottom: 54px; transform: translateY(8px) scale(.98); }
+/* 球被拖到屏幕左侧时，面板改贴球左缘向右展开，否则会伸出屏幕外点不到 */
+.mu.panel-left .mu-panel { right: auto; left: 0; }
 .mu.is-open .mu-panel { opacity: 1; transform: none; pointer-events: auto; }
 
 .mu-now { display: flex; align-items: center; gap: 10px; min-width: 0; }
@@ -117,7 +137,6 @@
 
 /* ---------------- 移动端：只留悬浮球，不展开面板 ---------------- */
 @media (max-width: 719px) {
-  .mu { right: 14px; bottom: calc(76px + env(safe-area-inset-bottom)); }
   .mu-fab { width: 42px; height: 42px; }
   .mu-panel { display: none; }
 }

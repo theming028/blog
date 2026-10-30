@@ -205,6 +205,7 @@
   function setOpen(v) {
     if (PHONE.matches && v) return;             // 移动端不提供展开面板
     open = v;
+    if (v) layoutPanel();                       // 先定好朝哪边展开，再显示，避免闪一下错位
     root.classList.toggle('is-open', open);
     els.panel.setAttribute('aria-hidden', open ? 'false' : 'true');
     els.fab.setAttribute('aria-expanded', open ? 'true' : 'false');
@@ -222,7 +223,11 @@
 
   /* ---------------- 事件绑定 ---------------- */
   function bind() {
-    els.fab.addEventListener('click', () => { if (PHONE.matches) toggle(); else setOpen(!open); });
+    initDrag();
+    els.fab.addEventListener('click', () => {
+      if (els.fab._dragSuppressed && els.fab._dragSuppressed()) return;   // 刚拖完，吞掉浏览器补发的 click
+      if (PHONE.matches) toggle(); else setOpen(!open);
+    });
     els.play.addEventListener('click', toggle);
     els.prev.addEventListener('click', () => load(idx - 1, true));
     els.next.addEventListener('click', () => load(nextIndex(), true));
@@ -249,6 +254,80 @@
       if (e.key === 'Escape' && open) setOpen(false);
     });
     PHONE.addEventListener('change', () => { if (PHONE.matches) setOpen(false); });
+  }
+
+  /* ---------------- 拖动（位置不持久化：只写内联 style，刷新回默认） ---------------- */
+  const EDGE = 8;               // 距视口边缘的最小留白
+  const DRAG_THRESHOLD = 5;     // 位移小于这个数按点击算，否则轻轻一点就被当成拖动
+
+  function navBottom() {
+    const n = document.querySelector('.nav');
+    return n ? n.getBoundingClientRect().bottom : 0;
+  }
+  function clampPos(x, y) {
+    const w = root.offsetWidth, h = root.offsetHeight;
+    // 顶边界取导航条下沿：球拖到导航底下会被 z-index 100 的 .nav 盖住，变成"点不到的球"。
+    // 取 max —— 导航比 EDGE 更深时以导航为准，用 min 会退化成 8px 白夹一场。
+    const minY = Math.max(EDGE, navBottom() + 4);
+    return {
+      x: Math.min(Math.max(x, EDGE), Math.max(EDGE, innerWidth - w - EDGE)),
+      y: Math.min(Math.max(y, minY), Math.max(minY, innerHeight - h - EDGE)),
+    };
+  }
+  function place(x, y) {
+    const p = clampPos(x, y);
+    root.classList.add('is-dragged');
+    root.style.left = Math.round(p.x) + 'px';
+    root.style.top = Math.round(p.y) + 'px';
+    layoutPanel();
+  }
+  /* 面板默认贴球的右缘向左展开；球靠近左边缘、向左放不下时，改成贴左缘向右展开。
+     同时下方空间不够时翻到上方展开。 */
+  function layoutPanel() {
+    if (!root || PHONE.matches) return;
+    const r = root.getBoundingClientRect();
+    const ph = els.panel.offsetHeight || 150, pw = els.panel.offsetWidth || 268;
+    root.classList.toggle('panel-up', r.bottom + ph + 12 > innerHeight && r.top - ph - 12 > 0);
+    root.classList.toggle('panel-left', r.right - pw < EDGE && r.left + pw <= innerWidth - EDGE);
+  }
+
+  function initDrag() {
+    let start = null, from = null, moved = false, suppress = false;
+    els.fab.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 && e.pointerType === 'mouse') return;
+      const r = root.getBoundingClientRect();
+      start = { x: e.clientX, y: e.clientY };
+      from = { x: r.left, y: r.top };
+      moved = false;
+      // 合成事件（测试/自动化）没有活动指针，捕获会抛；真实交互不受影响
+      try { els.fab.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    });
+    els.fab.addEventListener('pointermove', (e) => {
+      if (!start) return;
+      const dx = e.clientX - start.x, dy = e.clientY - start.y;
+      if (!moved) {
+        if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+        moved = true;
+        els.fab.classList.add('is-grabbing');
+        setOpen(false);   // 拖着拖着面板还开着会挡住视线，先收起来
+      }
+      place(from.x + dx, from.y + dy);
+    });
+    const end = (e) => {
+      if (!start) return;
+      start = null;
+      els.fab.classList.remove('is-grabbing');
+      if (moved) { moved = false; suppress = true; }   // 拖动收尾时浏览器还会补一个 click，得吞掉
+    };
+    els.fab.addEventListener('pointerup', end);
+    els.fab.addEventListener('pointercancel', end);
+    els.fab._dragSuppressed = () => { if (suppress) { suppress = false; return true; } return false; };
+    // 旋转屏幕或窗口变窄时，球可能留在屏幕外：重新夹回可视区
+    addEventListener('resize', () => {
+      if (!root || !root.classList.contains('is-dragged')) return;
+      const r = root.getBoundingClientRect();
+      place(r.left, r.top);
+    });
   }
 
   /* ---------------- 对外接口 ---------------- */
