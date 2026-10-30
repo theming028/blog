@@ -104,13 +104,28 @@
   }
   function paintTrack() {
     const t = tracks[idx];
-    if (!t) return;
+    // 空歌单也要有明确状态：前台照常显示播放器，只是没有可播内容
+    if (!t) {
+      els.title.textContent = '歌单为空';
+      els.artist.textContent = '在后台「播放器」里添加歌曲';
+      els.cover.innerHTML = ICON.note;
+      els.disc.innerHTML = ICON.note;
+      els.cur.textContent = '0:00'; els.dur.textContent = '0:00';
+      els.fill.style.width = '0%'; els.knob.style.left = '0%';
+      return;
+    }
     els.title.textContent = t.title;
     els.artist.textContent = t.artist || '';
     const img = t.cover ? '<img src="' + t.cover.replace(/"/g, '&quot;') + '" alt="" loading="lazy">' : '';
     els.cover.innerHTML = img || ICON.note;
     els.disc.innerHTML = t.cover ? '<img src="' + t.cover.replace(/"/g, '&quot;') + '" alt="">' : ICON.note;
     els.title.title = t.title + (t.artist ? ' — ' + t.artist : '');
+  }
+  /* 没有可播内容时把三个动作键置灰——比"点了弹提示"更早地把话说清楚 */
+  function paintEnabled() {
+    const none = !tracks.length;
+    [els.play, els.prev, els.next].forEach((b) => { b.disabled = none; });
+    root.classList.toggle('is-empty', none);
   }
   function paintProgress() {
     const d = audio && Number.isFinite(audio.duration) ? audio.duration : 0;
@@ -252,22 +267,25 @@
   }
 
   window.MusicPlayer = {
-    /* feed.js 读到设置后调用：on=false 或歌单为空时整个组件不出现 */
+    /* feed.js 读到设置后调用。显示与否只看开关：歌单为空也照常出现，
+       面板里明确写"歌单为空"，三个动作键置灰——这样后台一开开关就能看到效果，
+       不必先凑够一首歌。 */
     apply(on, list) {
-      const want = !!on && Array.isArray(list) && list.length > 0;
-      if (!want) { destroy(); return; }
-      const sig = list.map((t) => t.url).join('|');
+      if (!on) { destroy(); return; }
       if (!root) build();
+      const tracks_ = Array.isArray(list) ? list : [];
+      const sig = tracks_.map((t) => t.url).join('|');
       const changed = sig !== (root.dataset.sig || '');
       root.dataset.sig = sig;
-      tracks = list;
+      tracks = tracks_;
       mode = Math.min(MODES.length - 1, Math.max(0, Number(ls.get(LS.mode, 0)) || 0));
-      paintMode(); paintPlay();
+      paintMode(); paintPlay(); paintEnabled();
+      if (!tracks.length) { idx = -1; paintTrack(); return; }
       if (changed) {
         const keep = idx >= 0 && idx < tracks.length ? idx : Number(ls.get(LS.idx, 0)) || 0;
         idx = -1;
         load(keep, playing);          // 后台改了歌单：正在播就续播，没在播只准备好首曲
-      } else if (idx < 0) {
+      } else {
         paintTrack();
       }
     },

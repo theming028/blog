@@ -36,6 +36,10 @@
       <button class="adm-nav-item" data-view="settings">
         <svg viewBox="0 0 24 24"><path d="M12 2 3 7v10l9 5 9-5V7zm0 2.3 6.5 3.6L12 13 5.5 9.5zM5 11.2l6 3.3v5.6l-6-3.3zm14 0v5.6l-6 3.3v-5.6z"/></svg>设置
       </button>
+      <button class="adm-nav-item" data-view="player">
+        <svg viewBox="0 0 24 24"><path d="M20 3.5 9.6 6v9.1a3.6 3.6 0 1 0 1.8 3.1V9.3l7-1.6z"/></svg>
+        <span>播放器</span><span class="adm-nav-badge" id="navPlBadge" style="display:none"></span>
+      </button>
     </nav>
     <div class="adm-side-foot">
       <button class="adm-nav-item" id="btnLogout">
@@ -189,17 +193,23 @@
               <label class="adm-seg-item"><input type="radio" name="fx" value="off"><svg viewBox="0 0 24 24"><path d="M12 7c2.8 0 5.3 1.3 7 3.4-1.7 2.1-4.2 3.4-7 3.4s-5.3-1.3-7-3.4C6.7 8.3 9.2 7 12 7zm0-2C6.5 5 2.7 7.9 1 10.4c1.7 2.5 5.5 5.4 11 5.4s9.3-2.9 11-5.4C21.3 7.9 17.5 5 12 5z" fill="currentColor"/><path d="m4 3 16 16-1.4 1.4L2.6 4.4z" fill="currentColor"/></svg>关闭</label>
             </div>
           </div>
-          <!-- 背景音乐播放器：开关 + 歌单在同一表单、同一个保存键，
-               与封面/昵称一致，避免"改了列表以为已经生效" -->
+          <div class="adm-form-actions"><button class="adm-btn primary" id="btnSetSave">保存设置</button></div>
+        </div>
+      </section>
+
+      <!-- 播放器视图：开关 + 歌单增删改排序，独立容器、独立保存键。
+           与设置页分开是因为歌单是逐条维护的列表，和"改一次昵称"不是一类操作 -->
+      <section class="adm-view" id="viewPlayer" hidden>
+        <div class="adm-form">
           <div class="adm-field">
-            <label>背景音乐播放器 <span class="hint">右下角悬浮球；停用或歌单为空时前台不出现</span></label>
+            <label>背景音乐播放器 <span class="hint">右下角悬浮球；停用则前台不出现。开关与歌单是否为空无关</span></label>
             <div class="adm-seg" id="playerSeg">
               <label class="adm-seg-item"><input type="radio" name="player" value="on"><svg viewBox="0 0 24 24"><path d="M20 3.5 9.6 6v9.1a3.6 3.6 0 1 0 1.8 3.1V9.3l7-1.6z" fill="currentColor"/></svg>启用</label>
               <label class="adm-seg-item"><input type="radio" name="player" value="off"><svg viewBox="0 0 24 24"><path d="M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm-1.4 4.6 4.6 3.4-4.6 3.4z" fill="currentColor"/><path d="m4 3 16 16" stroke="currentColor" stroke-width="1.7" fill="none"/></svg>停用</label>
             </div>
           </div>
           <div class="adm-field">
-            <label>歌单 <span class="hint" id="plCount">最多 50 首 · 只支持 https 直链，本站不存放音频文件</span></label>
+            <label>歌单 <span class="hint" id="plCount">最多 50 首 · 只支持 http(s) 直链，本站不存放音频文件</span></label>
             <div class="pl-list" id="plList"></div>
             <!-- 新增区：字段纵向一行一个；填一半想放弃有点「取消」，不靠点别处隐式清空 -->
             <div class="pl-add" id="plAdd">
@@ -213,7 +223,7 @@
               </div>
             </div>
           </div>
-          <div class="adm-form-actions"><button class="adm-btn primary" id="btnSetSave">保存设置</button></div>
+          <div class="adm-form-actions"><button class="adm-btn primary" id="btnPlSave">保存播放器设置</button></div>
         </div>
       </section>
     </div>

@@ -28,7 +28,7 @@ const STATUS_LABEL = { visible: '已显示', pending: '待审核', hidden: '已�
 const STATUS_CLS = { visible: 'pub', pending: 'warn', hidden: 'off' };
 
 /* ============ 视图切换 ============ */
-const VIEW_TITLE = { content: '内容管理', comments: '评论管理', visits: '访客记录', links: '网上邻居', settings: '设置' };
+const VIEW_TITLE = { content: '内容管理', comments: '评论管理', visits: '访客记录', links: '网上邻居', settings: '设置', player: '播放器' };
 function switchView(view) {
   if (!VIEW_TITLE[view]) view = 'content';
   $('#viewContent').hidden = view !== 'content';
@@ -36,14 +36,15 @@ function switchView(view) {
   $('#viewVisits').hidden = view !== 'visits';
   $('#viewLinks').hidden = view !== 'links';
   $('#viewSettings').hidden = view !== 'settings';
+  $('#viewPlayer').hidden = view !== 'player';
   $$('.adm-nav-item[data-view]').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
   $('#pageTitle').textContent = VIEW_TITLE[view];
   document.title = `${VIEW_TITLE[view]} · 朝夕光年后台`;
   if (view === 'comments') loadComments();
   if (view === 'visits') loadVisits();
   if (view === 'links') loadLinks();
-  // 注意：进设置视图时不重填表单。切走再切回就把半截昵称/签名冲掉，等于"隐式丢弃输入"；
-  // 值已经在 input 里，保持原样才对，换过的图也一样留在 settings 草稿里等保存。
+  // 注意：进设置/播放器视图时都不重填表单。切走再切回就把半截昵称/签名或半截歌单
+  // 编辑冲掉，等于"隐式丢弃输入"；值已经在 input 与草稿里，保持原样才对。
   $('#side').classList.remove('open');
 }
 $$('.adm-nav-item[data-view]').forEach((b) => b.addEventListener('click', () => switchView(b.dataset.view)));
@@ -100,12 +101,16 @@ function renderSettings() {
   const r = document.querySelector('#fxSeg input[value="' + want + '"]');
   if (r) r.checked = true;
   paintFx();
-  // 播放器开关 + 歌单草稿：只在初次加载与保存成功后重置，切视图不动（同昵称/签名的处理口径）
+  // 播放器开关 + 歌单草稿
   const pr = document.querySelector('#playerSeg input[value="' + (settings.player === 'on' ? 'on' : 'off') + '"]');
   if (pr) pr.checked = true;
   paintPlayer();
-  plDraft = (Array.isArray(settings.playlist) ? settings.playlist : []).map((t) => ({ ...t }));
-  plCancelEdit();
+  // 只在草稿"干净"时用服务端值重灌。否则：在播放器页改了一半没保存，切到设置页存个昵称
+  // 就把歌单草稿冲回服务端的老值——属于隐式丢弃输入，必须避免。
+  if (!plDirty) {
+    plDraft = (Array.isArray(settings.playlist) ? settings.playlist : []).map((t) => ({ ...t }));
+    plCancelEdit();
+  }
   renderPlaylist();
 }
 $('#fxSeg').addEventListener('change', paintFx);
@@ -113,6 +118,7 @@ $('#fxSeg').addEventListener('change', paintFx);
 /* ============ 歌单编辑（草稿态，随「保存设置」一次写回） ============ */
 let plDraft = [];
 let plEditing = null;   // 正在编辑的条目 id；null 表示新增
+let plDirty = false;    // 草稿与服务端是否已分叉：脏时不许被服务端值重灌
 
 function playerValue() {
   const el = document.querySelector('#playerSeg input:checked');
@@ -128,7 +134,10 @@ function plHost(u) { try { return new URL(u).host; } catch (e) { return '—'; }
 
 function renderPlaylist() {
   const box = $('#plList');
-  $('#plCount').textContent = `已添加 ${plDraft.length} 首 · 最多 50 首 · 只支持 https 直链，本站不存放音频文件`;
+  const badge = $('#navPlBadge');
+  if (badge) { badge.textContent = plDraft.length; badge.style.display = plDraft.length ? '' : 'none'; }
+  $('#plCount').textContent = `已添加 ${plDraft.length} 首 · 最多 50 首 · 只支持 http(s) 直链，本站不存放音频文件`
+    + (plDirty ? ' · 有未保存的修改' : '');
   if (!plDraft.length) {
     box.innerHTML = '<div class="pl-empty">歌单为空，前台不会出现播放器</div>';
     return;
@@ -156,12 +165,13 @@ $('#plList').addEventListener('click', async (e) => {
   const i = plDraft.findIndex((t) => t.id === id);
   if (i < 0) return;
   const op = btn.dataset.pl;
-  if (op === 'up' && i > 0) { [plDraft[i - 1], plDraft[i]] = [plDraft[i], plDraft[i - 1]]; }
-  else if (op === 'down' && i < plDraft.length - 1) { [plDraft[i + 1], plDraft[i]] = [plDraft[i], plDraft[i + 1]]; }
+  if (op === 'up' && i > 0) { [plDraft[i - 1], plDraft[i]] = [plDraft[i], plDraft[i - 1]]; plDirty = true; }
+  else if (op === 'down' && i < plDraft.length - 1) { [plDraft[i + 1], plDraft[i]] = [plDraft[i], plDraft[i + 1]]; plDirty = true; }
   else if (op === 'del') {
     // confirmDlg 是异步的，必须 await：不 await 时它返回 Promise（恒为真），确认框等于没做
     if (!await confirmDlg('删除《' + plDraft[i].title + '》？保存设置后生效', '删除')) return;
     plDraft.splice(i, 1);
+    plDirty = true;
     if (plEditing === id) plCancelEdit();
   } else if (op === 'edit') {
     plEditing = id;
@@ -195,14 +205,34 @@ $('#plAppend').addEventListener('click', () => {
   };
   if (plEditing) {
     const i = plDraft.findIndex((t) => t.id === plEditing);
-    if (i >= 0) plDraft[i] = entry;
+    if (i >= 0) { plDraft[i] = entry; plDirty = true; }
   } else {
     if (plDraft.length >= 50) { alertDlg('歌单最多 50 首'); return; }
     plDraft.push(entry);
+    plDirty = true;
   }
   plCancelEdit();
   renderPlaylist();
-  showToast('已加入草稿，点「保存设置」后生效');
+  showToast('已加入草稿，点「保存播放器设置」后生效');
+});
+
+/* 播放器模块独立保存：只送 player 与 playlist 两个键。
+   服务端 PUT 对未出现的键一律不动，所以不会冲掉封面/昵称/特效。 */
+$('#btnPlSave').addEventListener('click', async () => {
+  if (!settingsOk) { alertDlg('设置未能加载，为避免把已有配置覆盖成空值，已阻止保存。请刷新页面重试'); return; }
+  const btn = $('#btnPlSave');
+  btn.disabled = true;
+  try {
+    const r = await api('/api/settings', { method: 'PUT', body: { player: playerValue(), playlist: plDraft } });
+    settings = { ...settings, ...r.settings };
+    plDirty = false;          // 已与服务端同步，允许之后被服务端值重灌
+    renderSettings();
+    showToast('播放器设置已保存');
+  } catch (e) {
+    alertDlg(e.message || '保存失败');
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 function renderStats() {
@@ -712,13 +742,8 @@ $('#btnSetSave').addEventListener('click', async () => {
   try {
     const r = await api('/api/settings', {
       method: 'PUT',
-      // 七项一次写完：合并成一个设置页之后再拆开保存就白合了
-      body: {
-        cover: settings.cover, avatar: settings.avatar, nickname: nick, sign: $('#signInput').value.trim(),
-        fx: fxValue(), player: playerValue(),
-        // 送草稿而不是送 settings：编辑还没保存前，页面上看到的就该是即将生效的内容
-        playlist: plDraft,
-      },
+      // 设置页只管这五项；播放器开关与歌单在「播放器」模块里各自独立保存
+      body: { cover: settings.cover, avatar: settings.avatar, nickname: nick, sign: $('#signInput').value.trim(), fx: fxValue() },
     });
     settings = r.settings; // 服务端回的是合并后的完整值，不再需要本地默认值兜底
     renderSettings();

@@ -128,3 +128,8 @@
   .mu-panel, .mu-fab, .mu-toast, .mu-knob { transition: none; }
   .mu.is-open .mu-panel { transform: none; }
 }
+
+/* ---------------- 空歌单：播放器照常显示，动作键置灰 ---------------- */
+.mu.is-empty .mu-btn:disabled { opacity: .35; cursor: default; background: none; }
+.mu.is-empty .mu-bar { pointer-events: none; opacity: .45; }
+.mu.is-empty .mu-title { color: #9A9A9A; }
