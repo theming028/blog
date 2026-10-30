@@ -29,10 +29,10 @@ if [ "$CONFIRMED" != "1" ]; then
   cat <<'HINT'
   未带 --confirmed，已停止（不会尝试签发，不消耗 Let's Encrypt 配额）。
   请在公网侧执行下面两行，第二行必须输出 ok：
-    ssh -i deploy_key root@8.137.115.150 'echo ok > /var/www/certbot/.well-known/acme-challenge/p.txt'
+    ssh -i deploy_key root@47.109.22.191 'echo ok > /var/www/certbot/.well-known/acme-challenge/p.txt'
     curl -s http://shaoym.me/.well-known/acme-challenge/p.txt      # 从本机/手机流量发起，不能从服务器发起
   看到 ok 后再跑：/root/deploy/_cutover.sh --confirmed
-  若返回 Non-compliance ICP Filing 拦截页，说明备案仍未生效。
+  若返回 Non-compliance ICP Filing 拦截页或连接被断，说明备案仍未生效。
 HINT
   exit 2
 fi
