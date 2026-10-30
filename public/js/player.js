@@ -175,7 +175,17 @@
     audio.src = tracks[idx].url;
     audio.currentTime = 0;
     paintProgress();
-    if (autoplay) audio.play().catch(() => { playing = false; paintPlay(); });
+    if (autoplay) attemptPlay(true);
+  }
+  /* 统一处理"尝试播放"：自动播放被拦时不报错、不弹提示轰炸访客，
+     而是挂上首次交互补播 + 一句轻提示；用户手动点击成功则把补播撤掉。 */
+  function attemptPlay(auto) {
+    const p = audio.play();
+    if (!p || !p.then) return;
+    p.then(() => { if (auto) disarmGesture(); }, () => {
+      if (!auto) return;
+      wantAutoplay = true; armGesture();
+    });
   }
 
   function nextIndex() {
@@ -196,9 +206,60 @@
 
   function toggle() {
     if (!tracks.length) { toast('歌单还是空的'); return; }
-    if (playing) { audio.pause(); return; }
+    if (playing) {
+      // 用户主动暂停 = 接管播放，之后不该被"首次交互补播"偷偷恢复
+      wantAutoplay = false; disarmGesture(); audio.pause(); return;
+    }
     if (idx < 0 || !audio || !audio.src) { wantPlay = true; load(Number(ls.get(LS.idx, 0)) || 0, true); return; }
     audio.play().catch(() => toast('浏览器拦截了自动播放，请再点一次'));
+  }
+
+  /* ---------------- 自动播放被拦截后的补救 ----------------
+   * 浏览器（Chrome/Safari）一律拦无用户交互的有声播放，所以"自动播放"只能做成：
+   * 先试一次，被拦就挂全局首次交互监听补播，并给一句提示——否则访客只会觉得功能坏了。
+   * 参考站 abcdtfk.icu 正是这套（wantAutoplay / armGesture / tryResume / 提示条）。 */
+  let wantAutoplay = false, gestureArmed = false;
+
+  function tryResume(e) {
+    if (!wantAutoplay) { disarmGesture(); return; }
+    // 点在播放器自身上时让球自己的逻辑处理，否则 pointerdown 播、click 又把它暂停
+    if (e && root && root.contains(e.target)) return;
+    if (!audio) { disarmGesture(); return; }
+    if (!audio.paused) { disarmGesture(); return; }
+    const p = audio.play();
+    if (p && p.then) p.then(() => disarmGesture(), () => { /* 仍被拦：留着监听等下一次交互 */ });
+    else disarmGesture();
+  }
+  function armGesture() {
+    if (gestureArmed) return;
+    gestureArmed = true;
+    document.addEventListener('pointerdown', tryResume);
+    document.addEventListener('touchstart', tryResume, { passive: true });
+    document.addEventListener('click', tryResume);
+    document.addEventListener('keydown', tryResume);
+    showHint();
+  }
+  function disarmGesture() {
+    if (!gestureArmed) return;
+    gestureArmed = false; wantAutoplay = false;
+    document.removeEventListener('pointerdown', tryResume);
+    document.removeEventListener('touchstart', tryResume);
+    document.removeEventListener('click', tryResume);
+    document.removeEventListener('keydown', tryResume);
+    hideHint();
+  }
+  let hintEl = null, hintTimer = 0;
+  function showHint() {
+    if (hintEl || !root) return;
+    hintEl = document.createElement('div');
+    hintEl.className = 'mu-hint';
+    hintEl.textContent = '点一下页面即可播放音乐';
+    root.appendChild(hintEl);
+    hintTimer = setTimeout(hideHint, 8000);   // 访客不理会也不是一直杵在那儿
+  }
+  function hideHint() {
+    clearTimeout(hintTimer);
+    if (hintEl) { hintEl.remove(); hintEl = null; }
   }
 
   /* ---------------- 面板开合 ---------------- */
@@ -349,6 +410,7 @@
   }
 
   function destroy() {
+    disarmGesture(); hideHint();
     if (audio) { audio.pause(); audio.src = ''; }
     if (root) { root.remove(); root = null; audio = null; els = {}; idx = -1; playing = false; open = false; booted = false; }
   }
@@ -369,12 +431,17 @@
       paintMode(); paintPlay(); paintEnabled();
       if (!tracks.length) { idx = -1; paintTrack(); booted = true; return; }
       /* 自动播放只在本次页面装载时尝试一次：之后后台改设置或重进视图都不该
-         突然又冒出一段音乐，那属于"用户没要求的自动出声"。 */
+         突然又冒出一段音乐，那属于"用户没要求的自动出声"。
+         选哪首：优先第一首标了 autoplay 的（否则"勾了却没播"完全无法理解），
+         没有标记才回到上次记住的位置。 */
       if (changed || !booted) {
-        const keep = idx >= 0 && idx < tracks.length ? idx : Number(ls.get(LS.idx, 0)) || 0;
-        const auto = !booted && !playing && !!(tracks[keep] && tracks[keep].autoplay);
+        const autoIdx = tracks.findIndex((t) => t && t.autoplay);
+        const remembered = Number(ls.get(LS.idx, 0)) || 0;
+        const keep = !booted && autoIdx >= 0 ? autoIdx
+          : (idx >= 0 && idx < tracks.length ? idx : remembered);
+        const auto = !booted && autoIdx >= 0 && keep === autoIdx;
         idx = -1;
-        load(keep, playing || auto);   // 正在播就续播；没在播则看这首歌有没有标自动播放
+        load(keep, playing || auto);
       } else {
         paintTrack();
       }

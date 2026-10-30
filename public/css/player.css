@@ -156,3 +156,14 @@
 .mu.is-empty .mu-btn:disabled { opacity: .35; cursor: default; background: none; }
 .mu.is-empty .mu-bar { pointer-events: none; opacity: .45; }
 .mu.is-empty .mu-title { color: #9A9A9A; }
+
+/* ---------------- 自动播放被拦时的提示 ----------------
+   只有一行小字、不带卡片与边框：访客点任意处即消失（由 JS 摘除）。
+   没有这句，被浏览器拦住的"自动播放"看起来就跟功能坏了一样。 */
+.mu-hint {
+  position: absolute; top: 52px; right: 0; white-space: nowrap;
+  font-size: 12px; line-height: 1.4; color: var(--wx-sub, #676D73);
+  background: rgba(255, 255, 255, .86); border-radius: 6px; padding: 3px 8px;
+  animation: muHintIn .25s ease both;
+}
+@keyframes muHintIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
