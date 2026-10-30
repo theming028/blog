@@ -180,18 +180,20 @@ PATCH 打回 400，而不是忽略那一列。
 
 ### 花园蝴蝶
 
-`fx=blossom` 时（且仅桌面 ≥720px、`prefers-reduced-motion` 未开启）花园里出现 3 只蝴蝶，
-素材与飞行动画同样取自 hibi.garden 的 MIT 仓库：实现 `public/js/butterflies.js` +
+`fx=blossom` 时（且仅桌面 ≥720px、`prefers-reduced-motion` 未开启）出现 **10 只自由飞舞的蝴蝶**，
+素材与飞行内核同样取自 hibi.garden 的 MIT 仓库：实现 `public/js/butterflies.js` +
 `public/css/butterflies.css`，精灵 `public/img/fly/*.webp`（5 种蝴蝶 + 影子，约 90KB）。
 
-- 与原站一致的机制：栖息生命周期（落在花园装饰的 `[data-perch]` 点上）、指针靠近 110px
-  （点击 160px）惊飞、三次贝塞尔滑翔 + 抬升摆动 + 朝向跟随、影子随升力收窄漂移、
-  12fps 定格帧时钟（像逐格动画）。
-- 博客侧的三点适配：① 数量默认 0、由 `applyFx` 通过 `body.dataset.butterflies` 驱动（原站默认 3）；
-  ② 原站蝴蝶落定后就一直待着（靠故事脚本放飞），博客没有章节系统，改为落定 6–14s 后自发再起飞，
-  飞行参数沿用原站 `release()`；③ 图层 fixed（视口坐标）+ `window.Butterflies` 入口。
-- 性能：transform-only、同时最多 2 只在飞、rAF 只在飞行/悬停期间运行；
-  手机与减弱动效下整个图层 `display:none`，零成本。
+- 为什么不是原站 butterflies.js 那套：实测线上 `data-butterflies=0`，那套"停在花上、指针惊飞"
+  的系统几乎不出场；让人记住"蝴蝶在随意飞舞"的是 **companion.js**——12fps 定格帧上的自由飞模拟：
+  巡航按"身位/秒"计、振翅-滑翔步态（滑翔下沉、下挥抬起）、之字形航向、转弯侧倾、翅膀内外差、
+  影子随升力漂移，且永不穿过正文。这套物理内核逐行保留。
+- 博客侧适配：一只伴飞 → 10 只混编群（4 蓝灰粉小粉 + 各一morpho/peacock，0.5–0.72 倍体型）；
+  图层 fixed 在视口；A* 绕文本网格退化为"到 `.phone` 信息流列矩形的解析式带符号距离"，
+  贴边滑行逻辑原样保留；40% 概率落花园装饰（`[data-perch]`）晒太阳，60% 在两侧留白里
+  挑自由点、到了缓一拍再飞下一处；保留指针惊飞（110px）。
+- 数量由 `applyFx` 驱动：`body.dataset.butterflies = 10 / 0` + `butterflies:sync` 事件。
+- 性能：transform-only、12fps 定格帧、群空即时退订时钟；窄屏与减弱动效下整层 `display:none`。
 
 ## 音视频
 

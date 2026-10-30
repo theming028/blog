@@ -1,51 +1,38 @@
-/* 飞舞的蝴蝶：与 hibi.garden 原站完全一致的飞行机制。
- * 来源：https://github.com/hibigarden/site — src/butterflies.js + src/clock.js
- * （MIT License，Copyright (c) 2026 schmayterling）。本文件是 MIT 许可下的改编版：
- * 保留原站的栖息生命周期（落点→惊飞→贝塞尔滑翔→收翅降落）、影子随升力漂移、
- * 12fps 定格帧时钟（像逐格动画一样每 1/12 秒走一帧）、惊飞交互（指针靠近就逃）、
- * 减弱动效降级（蝴蝶停在原地不动）。改动只有四处，逐条列在 ADAPTATIONS 里。
+/* 飞舞的蝴蝶：随桃花特效（fx=blossom）出现的蝴蝶群。
+ * 改编自 hibi.garden — https://github.com/hibigarden/site
+ * （src/companion.js 的飞行内核 + src/butterflies.js 的精灵与图层，
+ *  MIT License，Copyright (c) 2026 schmayterling）
  *
- * 素材：/img/fly/*.webp（五种种类的蝴蝶与影子，取自同一 MIT 仓库）。
- * 生命周期由 feed.js 的 applyFx 调度：fx=blossom 时 body.dataset.butterflies=3，
- * 否则 0——原站的 sync() 本来就按这个 dataset 决定养几只，0 即全部移除。
- * prefers-reduced-motion 下整个图层由 CSS 隐藏（与雪/花瓣画布同口径，不渲染）。
- * 窄屏（<720px）花园不渲染、无栖息点，sync() 自然不羽化——蝴蝶只随桌面花园出现。
+ * 为什么是 companion.js：原站让人记住的"蝴蝶在随意飞舞"不是 butterflies.js
+ * 那套"停在花上、指针靠近才惊飞"的栖息系统（实测线上 data-butterflies=0，
+ * 几乎不出场），而是 companion.js——一套 12fps 定格帧上的自由飞模拟：
+ * 巡航速度以"身位/秒"计、振翅-滑翔步态（glide 时下沉、下挥时抬起）、
+ * 之字形航向漂移、转弯侧倾、翅膀内外差（bank）、影子随升力漂移，
+ * 并且永远绕开正文。本文件把这套飞行内核逐行保留，换掉它的"剧情"部分。
  *
- * 博客侧的适应性改动（除头注四条外）：
- * 5) rest() 在交互模式下给落定的蝴蝶排 6–14s 后的自发再起飞——原站里蝴蝶落定后
- *    一直待着，靠指针惊飞或故事第五章的 release() 起飞；博客没有章节系统，
- *    沿用 release() 的"从下方惊扰"参数 (b.x, b.y+400)，飞行动画本身逐行未动；
- * 6) 数量默认 0（原站默认 3）：博客里蝴蝶只应随桃花出现，feed.js 未表态前不羽化；
- * 7) 监听 butterflies:sync 事件（feed.js 改完 dataset 后派发）并补上原站尾部的
- *    ResizeObserver / fonts.ready 重排。 */
+ * ---- ADAPTATIONS（对 companion.js 的全部改动）----
+ * 1) 一只"伴飞"蝴蝶 → 一群（桌面 10 只，混五种精灵，0.5–0.72 倍体型）；
+ * 2) 图层 fixed 在视口（原站跟页面滚动走）：目标点、避障坐标系都在视口内；
+ * 3) 去掉 A* 绕文本网格（chamfer/plan/stations/pick/reenter/剧情会面 spiral/chase/
+ *    pair/wake/lifttoff）——博客的"正文"是一根固定的信息流列，避障退化为
+ *    解析式的"到 .phone 列矩形的带符号距离"，飞行中贴边滑行逻辑（away/keep）原样保留；
+ * 4) 目标改选：40% 概率落花园装饰（[data-perch]，落上去晒太阳 bask），
+ *    60% 概率在两侧留白里挑一个自由点，到了不停留、缓一拍再飞下一处——"随意飞舞"；
+ * 5) 保留指针惊飞（110px 内起飞逃离），去掉 plain/torn 撕纸边淡入与暗色影子；
+ * 6) 数量由 feed.js 的 applyFx 驱动：body.dataset.butterflies = 10（桃花）/ 0（其它）；
+ * 7) 窄屏（<720px 花园不渲染）与 prefers-reduced-motion 下整层不出现（CSS + JS 双保险）。
+ * 12fps 定格帧时钟为原站 clock.js 的内联版（语义相同，命名 onFrame 避免与本文件 tick 撞名）。 */
 (function () {
   'use strict';
 
-  /* ---- ADAPTATIONS（对原站 butterflies.js 的全部改动）----
-   * 1) import { onMotion, tick } from './clock.js' → 内联为下面的 12fps 时钟（语义相同）；
-   * 2) 图层从 position:absolute（页面坐标）改为 position:fixed（视口坐标）：
-   *    蝴蝶的栖息点（路灯/长椅/薰衣草）在 #garden-bg 里，而它是 fixed 的——
-   *    页面坐标会随滚动与固定花园脱节；measure() 里 ox/oy 不再加 scroll 偏移；
-   * 3) 精灵路径 /scrapbook/fly/ → /img/fly/；
-   * 4) 增加窗口.Butterflies = { setCount }（fx 开关的入口）并监听 butterflies:sync，
- *    原站靠 data-perch 元素与 scrapbook:settled 事件驱动重排，博客里由 fx 开关触发。
- * ---- 其余逐行保留原站实现 ---- */
-
-  // One stop-motion clock for the whole site: everything time-based steps at 12 fps, like animation shot on
-  // twos. Subscribers get the held frame's time (ms, a multiple of 1000/12) and return false when they are
-  // done; the loop only runs while someone is subscribed. Motion is off when the reader prefers reduced
-  // motion or has stilled the garden (the header toggle sets <html data-motion="still">).
+  /* ---------------- 12fps 定格帧时钟（原站 clock.js 内联） ---------------- */
   const FRAME = 1000 / 12;
-
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
   const watchers = new Set();
   const subscribers = new Set();
   let rafClock = 0;
   let held = -1;
-
-  const still = () =>
-    reduced.matches || document.documentElement.dataset.motion === 'still';
-
+  const still = () => reduced.matches || document.documentElement.dataset.motion === 'still';
   function loop(now) {
     rafClock = 0;
     const frame = Math.floor(now / FRAME);
@@ -56,37 +43,24 @@
     }
     if (subscribers.size && !document.hidden) rafClock = requestAnimationFrame(loop);
   }
-
-  /** run `fn(time)` on every held frame until it returns false; returns an unsubscribe
-   *  （原站写作 import { tick as onFrame } —— 订阅函数以 onFrame 之名进入本文件；
-   *  若保留原名 tick，会与下方蝴蝶的每帧回调 tick 同名互相覆盖，动画永远启动不了） */
   function onFrame(fn) {
     subscribers.add(fn);
     if (!document.hidden) rafClock ||= requestAnimationFrame(loop);
     return () => subscribers.delete(fn);
   }
-
-  /** call `fn(still())` now and whenever motion is turned on or off */
   function onMotion(fn) {
     watchers.add(fn);
     fn(still());
     return () => watchers.delete(fn);
   }
-
-  function notify() {
-    for (const fn of watchers) fn(still());
-  }
+  function notify() { for (const fn of watchers) fn(still()); }
   reduced.addEventListener('change', notify);
-  new MutationObserver(notify).observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ['data-motion'],
-  });
+  new MutationObserver(notify).observe(document.documentElement, { attributes: true, attributeFilter: ['data-motion'] });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && subscribers.size) rafClock ||= requestAnimationFrame(loop);
   });
 
-  // Desktop display size in css px (phones 0.7×); 2× sprites, body on the centre axis.
-  // sizes include the torn paper margin around each butterfly
+  /* ---------------- 精灵与飞行参数（原站逐行） ---------------- */
   const SPECIES = [
     { id: 'small-blue', src: '/img/fly/small-blue.webp', w: 121, h: 97 },
     { id: 'morpho', src: '/img/fly/morpho.webp', w: 145, h: 113 },
@@ -94,37 +68,41 @@
     { id: 'cabbage-white', src: '/img/fly/cabbage-white.webp', w: 125, h: 89 },
     { id: 'peacock', src: '/img/fly/peacock.webp', w: 133, h: 94 },
   ];
+  const SP = Object.fromEntries(SPECIES.map((s) => [s.id, s]));
   const DEG = Math.PI / 180;
-  const phone = matchMedia('(max-width: 699px)');
-  const rand = (min, max) => min + Math.random() * (max - min);
-  const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
-  const flying = (b) => b.anim?.fly;
+  const phone = matchMedia('(max-width: 719px)');   // 花园与蝴蝶同宽窄屏不出现
+  const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+  const lerp = (a, b, u) => a + (b - a) * u;
+  const turnTo = (from, to) => ((((to - from) % 360) + 540) % 360) - 180;
 
-  const layer = document.createElement('div');
-  layer.className = 'bf-layer';
-  layer.setAttribute('aria-hidden', 'true');
-  document.body.append(layer);
+  // flight, in body widths per second（原站注释：手机上的小蝴蝶按身位飞得一样快）
+  const CRUISE = 3.6; // travel speed
+  const VMAX = 5;     // 画面上永不超过这个速度（含之字与颠簸）
+  const ACCEL = 7;    // 转向加速度，widths/s²
+  const SINK = 1.4;   // 滑翔时下漂，widths/s²
+  const REACH = 0.5;  // 与障碍保持的最小间距（半个身位）
+  const SUB = 5;      // 每个定格帧 5 个固定物理步
+  const DT = FRAME / 1000 / SUB;
+  const BEATS = { fast: [1, 0.08], cruise: [1, 0.55, 0.04], slow: [1, 0.62, 0.12, 0.5] };
 
-  const flock = [];
-  const active = new Set();
-  let spots = new Map(); // perch element -> landing point in layer coordinates
-  let ox = 0; // layer origin in viewport coordinates (the layer is fixed; ADAPTATION 2)
-  let oy = 0;
-  let scale = 1;
+  let seed = (Math.random() * 2 ** 32) >>> 0;
+  function random() {   // mulberry32（原站同款，便于 ?flight= 复现；博客不暴露调试口）
+    seed = (seed + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(seed ^ (seed >>> 15), seed | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+  const rand = (lo, hi) => lo + random() * (hi - lo);
+
+  /* ---------------- 图层与演员 ---------------- */
+  let layer = null;
+  const cast = [];
   let running = false;
-  let motion; // aborts the interaction listeners
+  let stopFrame = null;
+  let motion;           // 交互监听的中止器（still 时为空）
   let measureTimer;
-  const io = new IntersectionObserver((entries) => {
-    for (const { target, isIntersecting } of entries) {
-      const b = flock.find((b) => b.el === target);
-      if (b) {
-        b.seen = isIntersecting;
-        rest(b);
-      }
-    }
-  });
 
-  function hatch(sp) {
+  function actor(sp, k, x, y) {
     const { w, h, src } = sp;
     layer.insertAdjacentHTML(
       'beforeend',
@@ -132,280 +110,318 @@
         `<div class="bf" style="width:${w}px;height:${h}px;--src:url(${src})"><div class="bf-stage"><i></i><i></i></div></div>`,
     );
     const el = layer.lastChild;
-    const b = { sp, el, shadow: el.previousSibling, wings: el.firstChild.children, x: 0, y: 0, a: 0 };
-    flock.push(b);
-    io.observe(el);
-    return b;
+    const a = { sp, el, shadow: el.previousSibling, wings: [...el.querySelectorAll('.bf-stage i')], w, h, k, kb: k };
+    Object.assign(a, { x, y, px: x, py: y, vx: 0, vy: 0, hd: rand(-90, 90), rot: 0, turn: 0, bank: 0 });
+    Object.assign(a, { wing: 0, lift: 0, op: 1, mode: 'fly', mt: 0, goal: null });
+    Object.assign(a, { gait: 'cruise', beat: 0, glide: false, gaitT: 0, zig: 0, zigTo: 0, zigT: 0, last: {}, dwell: 0 });
+    return a;
+  }
+  function drop(a) { a.el.remove(); a.shadow.remove(); }
+
+  function draw(a) {
+    const { w, h, k } = a;
+    const set = (el, key, value) => { if (a.last[key] !== value) el.style[key.split(':')[1]] = a.last[key] = value; };
+    set(a.el, 'el:transform', `translate3d(${(a.px - w / 2).toFixed(1)}px,${(a.py - h / 2).toFixed(1)}px,0) rotate(${a.rot.toFixed(1)}deg) scale(${k.toFixed(3)})`);
+    // banking：转弯内侧的翅膀抬高、外侧放平（原站逐行）
+    const left = clamp(a.wing + a.bank, 0, 86).toFixed(0);
+    const right = clamp(a.wing - a.bank, 0, 86).toFixed(0);
+    a.wings.forEach((wing, i) => {
+      const value = `rotateY(${i % 2 ? -right : left}deg)`;
+      if (a.last[i] !== value) wing.style.transform = a.last[i] = value;
+    });
+    const off = (4 + 30 * a.lift) * k;
+    set(a.shadow, 'shadow:transform', `translate3d(${(a.px - w / 2 - 8 + off * 0.8).toFixed(1)}px,${(a.py - h / 2 - 8 + off).toFixed(1)}px,0) rotate(${a.rot.toFixed(1)}deg) scale(${(k * Math.cos(Math.max(a.wing, 0) * DEG)).toFixed(3)},${k.toFixed(3)})`);
+    set(a.shadow, 'shadow:opacity', String(+(a.op * 0.34 * (1 - 0.5 * a.lift)).toFixed(3)));
+    set(a.el, 'el:opacity', String(+a.op.toFixed(3)));
   }
 
-  function drop(b) {
-    active.delete(b);
-    clearTimeout(b.timer);
-    b.timer = 0;
-    io.unobserve(b.el);
-    b.el.remove();
-    b.shadow.remove();
-    flock.splice(flock.indexOf(b), 1);
-  }
+  /* ---------------- 自由空间：视口减去 .phone 信息流列（ADAPTATION 3） ---------------- */
+  let W = 0, VH = 0, scale = 1;
+  let col = null;   // 内容列矩形（视口坐标），带一点气隙
+  const spots = []; // [data-perch] 花园装饰落点（视口坐标）
 
-  function draw(b, x, y, a, lift = 0, wing = 0) {
-    const { w, h } = b.sp;
-    const size = scale * (1 + 0.12 * lift);
-    const spread = size * (1 + 0.3 * lift);
-    const offset = (4 + 34 * lift) * scale;
-    b.el.style.transform = `translate3d(${x - w / 2}px,${y - h / 2}px,0) rotate(${a}deg) scale(${size})`;
-    b.wings[0].style.transform = `rotateY(${wing}deg)`;
-    b.wings[1].style.transform = `rotateY(${-wing}deg)`;
-    // The shadow narrows as the wings rise and drifts away as the butterfly lifts.
-    b.shadow.style.transform = `translate3d(${x - w / 2 - 8 + offset * 0.8}px,${y - h / 2 - 8 + offset}px,0) rotate(${a}deg) scale(${spread * Math.cos(wing * DEG)},${spread})`;
-    b.shadow.style.opacity = lift ? `calc(var(--bf-shadow) * ${1 - 0.5 * lift})` : '';
-  }
-
-  function mark(b, fly) {
-    b.el.classList.toggle('bf-fly', fly);
-    b.shadow.classList.toggle('bf-fly', fly);
-  }
-
-  function play(b, anim) {
-    anim.t = 0;
-    b.anim = anim;
-    mark(b, !!anim.fly);
-    active.add(b);
-    if (!running) {
-      running = true;
-      onFrame(tick);
+  function measure() {
+    W = document.documentElement.clientWidth;
+    VH = innerHeight;
+    scale = phone.matches ? 0.7 : 1;
+    const el = document.querySelector('.phone');
+    const r = el?.getBoundingClientRect();
+    col = r && r.width ? { l: r.left - 10, t: -1, r: r.right + 10, b: VH + 1 } : null;
+    spots.length = 0;
+    for (const p of document.querySelectorAll('[data-perch]')) {
+      if (!p.getClientRects().length) continue;
+      const q = p.getBoundingClientRect();
+      const [fx, fy] = `${p.dataset.perch},`.split(',').map((v) => (v.trim() && isFinite(v) ? +v : 0.5));
+      spots.push({ x: q.left + fx * q.width, y: q.top + fy * q.height });
     }
   }
+  /** 带符号距离：正=离列多远，负=在列里多深（解析式，替代原站 chamfer 网格） */
+  function clearance(x, y) {
+    if (!col) return 1e6;
+    if (x > col.l && x < col.r && y > col.t && y < col.b) return -Math.min(x - col.l, col.r - x, y - col.t, col.b - y);
+    return Math.hypot(Math.max(col.l - x, 0, x - col.r), Math.max(col.t - y, 0, y - col.b));
+  }
+  function away(x, y) {   // 原站逐行：有限差分梯度，指向远离障碍的单位向量
+    const c = 16;
+    const gx = clearance(x + c, y) - clearance(x - c, y);
+    const gy = clearance(x, y + c) - clearance(x, y - c);
+    const len = Math.hypot(gx, gy) || 1;
+    return [gx / len, gy / len];
+  }
+  const reach = (a) => REACH * a.w * a.k;
+  const vmax = (a) => VMAX * a.w * a.kb;
 
-  function stop(b) {
-    active.delete(b);
-    b.anim = null;
-    mark(b, false);
-    draw(b, b.x, b.y, b.a);
+  /* ---------------- 目标选择（ADAPTATION 4） ---------------- */
+  function pickGoal(a) {
+    if (spots.length && random() < 0.4) {
+      const s = spots[(random() * spots.length) | 0];
+      if (clearance(s.x, s.y) > 0) return { x: s.x, y: s.y, perch: true };
+    }
+    for (let i = 0; i < 24; i++) {
+      const x = rand(24, W - 24), y = rand(48, VH - 40);
+      if (clearance(x, y) >= reach(a) + 10) return { x, y };
+    }
+    const left = col ? col.l - reach(a) - 16 : W * 0.12;
+    return { x: clamp(left, 24, W - 24), y: rand(VH * 0.3, VH * 0.7) };
+  }
+  function launch(a) {
+    a.mode = 'takeoff';
+    a.mt = 0;
+    a.vy -= 1.1 * a.w * a.kb;
   }
 
-  // runs on the site's 12 fps clock (held frames, like stop motion)
-  function tick(now) {
-    for (const b of active) {
-      const f = b.anim;
-      const dt = Math.min(now - (f.last ?? now), 120) / 1000;
-      f.last = now;
-      const u = Math.min((f.t += dt) / f.d, 1);
-      if (f.fly) glide(b, f, u, dt);
-      else draw(b, b.x, b.y, b.a, 0, (f.amp * (1 - Math.cos(2 * Math.PI * f.n * u))) / 2);
-      if (u < 1) continue;
-      if (f.fly) play(b, { n: 2, amp: 40, d: 0.9 }); // land with a couple of slower beats
+  /* ---------------- 物理（companion.js 逐行，去掉 A* 路径部分） ---------------- */
+  function physics(a) {
+    const w = a.w * a.kb;
+    const goal = a.goal;
+    a.mt += DT;
+    if (!goal) return;
+    const left = Math.hypot(goal.x - a.x, goal.y - a.y);
+    if (a.mode === 'perch' || a.mode === 'flare' || a.mode === 'settle') {
+      if (left > 0.25 * w) launch(a);
       else {
-        stop(b);
-        rest(b);
+        a.vx = a.vy = 0;
+        if (a.mode !== 'perch') {
+          a.x += (goal.x - a.x) * Math.min(1, DT * 10);
+          a.y += (goal.y - a.y) * Math.min(1, DT * 10);
+        }
+        if (a.mode === 'flare' && a.mt > 0.17) [a.mode, a.mt] = ['settle', 0];
+        if (a.mode === 'settle' && a.mt > 0.25) {
+          [a.mode, a.mt] = ['perch', 0];
+          a.perchAt = { bask: goal.perch ? rand(1.2, 3.6) : rand(0.25, 0.7), shift: rand(2.5, 6) };
+        }
+        return;
       }
     }
-    if (active.size) return true;
+    if (a.mode === 'takeoff' && a.mt > 0.3) [a.mode, a.mt] = ['fly', 0];
+    if (goal.perch && a.mode === 'fly' && left < 0.18 * w) [a.mode, a.mt] = ['hover', 0];
+    if (a.mode === 'hover') {
+      if (left > 0.6 * w || !goal.perch) a.mode = 'fly';
+      else if (a.mt > 0.3 && left < 0.08 * w) { [a.mode, a.mt] = ['flare', 0]; return; }
+    }
+
+    let tx = goal.x, ty = goal.y;
+    const brake = goal.perch ? clamp(left / (2.4 * w), 0.12, 1) : clamp(left / (1.2 * w), 0, 1);
+    let speed = CRUISE * w * (goal.speed ?? 1) * brake;
+    if (a.mode === 'hover') speed = Math.min(speed, left * 5);
+    let dx = tx - a.x, dy = ty - a.y;
+    const dl = Math.hypot(dx, dy) || 1;
+    const room = clamp((clearance(a.x, a.y) - reach(a)) / reach(a), 0, 1);
+    const zig = a.mode === 'fly' && left > 1.5 * w ? a.zig * room : 0;
+    [dx, dy] = [(dx * Math.cos(zig) - dy * Math.sin(zig)) / dl, (dx * Math.sin(zig) + dy * Math.cos(zig)) / dl];
+    let ax = dx * speed - a.vx;
+    let ay = dy * speed - a.vy;
+    const lim = ACCEL * w * (a.glide ? 0.4 : 1) * DT;
+    const am = Math.hypot(ax, ay);
+    if (am > lim) [ax, ay] = [(ax * lim) / am, (ay * lim) / am];
+    a.vx += ax;
+    a.vy += ay;
+    a.vy += SINK * w * DT;
+
+    // 永不穿字：会把蝴蝶带进禁区的速度分量沿边界滑开（原站逐行）
+    const near = Math.hypot(goal.x - a.x, goal.y - a.y) < 2 * reach(a) || a.mode === 'takeoff';
+    const keep = near ? Math.min(reach(a), clearance(goal.x, goal.y) - 2, clearance(a.x, a.y)) : reach(a);
+    const here = clearance(a.x, a.y);
+    if (clearance(a.x + a.vx * DT, a.y + a.vy * DT) < Math.min(keep, here + 0.01)) {
+      const [gx, gy] = away(a.x, a.y);
+      const into = a.vx * gx + a.vy * gy;
+      if (into < 0) [a.vx, a.vy] = [a.vx - into * gx, a.vy - into * gy];
+    }
+    const v = Math.hypot(a.vx, a.vy);
+    const cap = (VMAX - 0.7) * w;
+    if (v > cap) [a.vx, a.vy] = [(a.vx * cap) / v, (a.vy * cap) / v];
+    a.x += a.vx * DT;
+    a.y += a.vy * DT;
+
+    if (v > 0.3 * w) {
+      const want = Math.atan2(a.vx, -a.vy) / DEG;
+      const step = clamp(turnTo(a.hd, want), -540 * DT, 540 * DT);
+      a.hd += step;
+      a.turn += (step / DT - a.turn) * Math.min(1, DT * 8);
+    } else a.turn *= 1 - Math.min(1, DT * 8);
+    a.bank += (clamp(a.turn * 0.1, -28, 28) - a.bank) * Math.min(1, DT * 10);
+
+    if ((a.zigT -= DT) <= 0) {
+      a.zigTo = (a.zigTo > 0 ? -1 : 1) * rand(10, 30) * DEG;
+      a.zigT = rand(0.25, 0.7);
+    }
+    a.zig += (a.zigTo - a.zig) * Math.min(1, DT * 6);
+    const climbing = a.vy < -0.35 * CRUISE * w;
+    const hard = Math.abs(a.turn) > 150;
+    const must = a.mode !== 'fly' || climbing || hard || v < 0.5 * CRUISE * w;
+    a.gaitT -= DT;
+    if (a.glide ? a.gaitT <= 0 || must : a.gaitT <= 0) {
+      a.glide = !a.glide && !must && random() < (a.vy > 0.2 * CRUISE * w ? 0.85 : 0.55);
+      a.gaitT = a.glide ? rand(0.2, 0.5) : rand(0.35, 0.9);
+    }
+    a.gait = a.mode === 'takeoff' || climbing || hard ? 'fast' : a.mode === 'hover' ? 'slow' : 'cruise';
+  }
+
+  /** 一个定格帧：先跑物理，再摆翅膀、身体与影子（companion.js step 逐行） */
+  function step(a) {
+    const w = a.w * a.kb;
+    const flapping = a.mode === 'fly' || a.mode === 'takeoff' || a.mode === 'hover';
+    if (flapping && !a.glide) {
+      const beat = BEATS[a.gait];
+      a.beat = (a.beat + 1) % beat.length;
+      if (beat[a.beat] < beat[(a.beat + beat.length - 1) % beat.length]) a.vy -= (SINK * w * beat.length * FRAME) / 1000;
+    }
+    for (let i = 0; i < SUB; i++) physics(a);
+    const beat = BEATS[a.gait];
+    const up = flapping && !a.glide ? beat[a.beat % beat.length] : 0;
+    if (a.mode === 'perch') {
+      const at = a.perchAt;
+      at.bask -= FRAME / 1000;
+      at.shift -= FRAME / 1000;
+      if (at.wingTo === undefined) at.wingTo = 72;
+      if (at.bask <= 0) [at.wingTo, at.bask] = [at.wingTo > 36 ? rand(0, 14) : 72, rand(1.6, 4.5)];
+      if (at.shift <= 0) [at.hdTo, at.shift] = [a.hd + (random() < 0.5 ? -1 : 1) * rand(10, 26), rand(3, 7)];
+      a.wing += clamp(at.wingTo - a.wing, -22, 22);
+      if (at.hdTo !== undefined) a.hd += clamp(turnTo(a.hd, at.hdTo), -9, 9);
+      a.lift = 0;
+    } else if (a.mode === 'flare') { a.wing = 0; a.lift = 0.3; }
+    else if (a.mode === 'settle') { a.wing = 18; a.lift = Math.max(0, a.lift - 0.12); }
+    else {
+      a.wing = a.glide ? 8 : up * (a.gait === 'fast' ? 78 : 68) + 4;
+      a.lift = Math.min(1, a.lift + 0.25) * (a.glide ? 0.9 : 1) - 0.06 * up;
+    }
+    const kTo = (a.goal?.k ?? a.kb) * (a.mode === 'flare' ? 1.05 : 1);
+    a.k += (kTo - a.k) * 0.35;
+    a.rot = a.hd + a.bank * 0.4;
+    let px = a.x;
+    let py = a.y + 0.045 * w * up;
+    const most = (vmax(a) * FRAME) / 1000;
+    const moved = Math.hypot(px - a.px, py - a.py);
+    if (moved > most && a.px > -999) [px, py] = [a.px + ((px - a.px) * most) / moved, a.py + ((py - a.py) * most) / moved];
+    a.px = px;
+    a.py = py;
+  }
+
+  /* ---------------- 建群 / 调群（非破坏式：只增删到目标数） ---------------- */
+  const MIX = ['small-blue', 'brimstone', 'cabbage-white', 'small-blue', 'morpho', 'cabbage-white', 'brimstone', 'small-blue', 'peacock', 'small-blue'];
+  function spawnOne(i) {
+    const sp = SP[MIX[i % MIX.length]];
+    const k = rand(0.5, 0.72) * scale;
+    const g = pickGoal({ w: sp.w, k });
+    const a = actor(sp, k, g.x, g.y);
+    a.goal = pickGoal(a);
+    a.mode = 'fly';
+    draw(a);
+    cast.push(a);
+  }
+  function sync() {
+    let want = parseInt(document.body.dataset.butterflies ?? 0) || 0;
+    want = clamp(want, 0, 12);
+    if (phone.matches) want = 0;   // 窄屏：花园不渲染，蝴蝶同层不出现
+    while (cast.length > want) drop(cast.pop());
+    while (cast.length < want) spawnOne(cast.length);
+    if (cast.length) run();
+  }
+  function frame() {
+    for (const a of cast) {
+      if (a.mode === 'perch') {
+        if (a.perchAt.bask <= 0 && a.goal && Math.hypot(a.goal.x - a.x, a.goal.y - a.y) < 0.3 * a.w * a.k) {
+          a.goal = pickGoal(a);
+          launch(a);
+        }
+      } else if (a.mode === 'fly' && a.goal && Math.hypot(a.goal.x - a.x, a.goal.y - a.y) < 0.12 * a.w * a.k && a.mt > 0.6) {
+        a.goal = pickGoal(a);   // 路过型目标：到了缓一拍再飞下一处
+        a.mt = 0;
+      }
+      const m = 0.55 * a.w * a.k + 140;   // 离屏过久：从最近的边回来
+      if (a.x < -m || a.x > W + m || a.y < -m || a.y > VH + m) {
+        const x = clamp(a.x, 20, W - 20), y = clamp(a.y, 40, VH - 40);
+        Object.assign(a, { x, y, px: x, py: y, vx: 0, vy: 0 });
+        a.goal = pickGoal(a);
+        a.mode = 'fly';
+      }
+      step(a);
+      draw(a);
+    }
+    return cast.length > 0;
+  }
+  function run() {
+    if (running || still()) return;
+    running = true;
+    // 群空时 frame() 返回 false 自行退订；running 必须在这里复位，否则下次 run() 永远不再订阅（冻结）
+    stopFrame = onFrame(() => {
+      const more = frame();
+      if (!more) running = false;
+      return more;
+    });
+  }
+  function halt() {
+    stopFrame?.();
+    stopFrame = null;
     running = false;
-    return false;
   }
 
-  // A cubic bezier from the takeoff point whose last leg leads head-first into the perch (b.x, b.y).
-  function glide(b, f, u, dt) {
-    const s = (1 - Math.cos(Math.PI * u)) / 2;
-    const m = 1 - s;
-    const x2 = b.x - Math.sin(b.a * DEG) * f.c;
-    const y2 = b.y + Math.cos(b.a * DEG) * f.c;
-    const x = m * m * m * f.x0 + 3 * m * s * (m * f.x1 + s * x2) + s * s * s * b.x;
-    const y = m * m * m * f.y0 + 3 * m * s * (m * f.y1 + s * y2) + s * s * s * b.y;
-    const dx = m * m * (f.x1 - f.x0) + 2 * m * s * (x2 - f.x1) + s * s * (b.x - x2);
-    const dy = m * m * (f.y1 - f.y0) + 2 * m * s * (y2 - f.y1) + s * s * (b.y - y2);
-    const len = Math.hypot(dx, dy) || 1;
-    const arc = Math.sin(Math.PI * u);
-    const wobble = arc * 9 * Math.sin(f.t * 11 + f.seed);
-    const left = f.d - f.t;
-    f.ph += 2 * Math.PI * dt * (left > 0.4 ? f.hz : 3 + ((f.hz - 3) * left) / 0.4);
-    const turn = Math.atan2(dx, -dy) / DEG - f.hd;
-    f.hd += ((((turn % 360) + 540) % 360) - 180) * Math.min(1, dt * 12);
-    const lift = Math.max(0, arc * (f.lift + 0.06 * Math.sin(f.ph)));
-    const wing = (72 * clamp(left / 0.25, 0, 1) * (1 - Math.cos(f.ph))) / 2;
-    draw(b, x - (dy / len) * wobble, y + (dx / len) * wobble, f.hd, lift, wing);
-  }
-
-  // 原站的 rest() 只清定时器：蝴蝶落定后一直待着，等指针惊飞或故事第五章 release()。
-  // 博客没有章节系统，这里让落定的蝴蝶 6–14s 后自发再起飞（仅交互模式、不重复排）。
-  function rest(b) {
-    if (!motion || b.timer) return;
-    b.timer = setTimeout(() => {
-      b.timer = 0;
-      if (!takeoff(b, b.x, b.y + 400)) rest(b);   // 没飞成（页面隐藏/落点满/在飞上限）就再等一轮
-    }, rand(6000, 14000));
-  }
-
-  function free(el, b) {
-    const { x, y } = spots.get(el);
-    const gap = (o) => Math.hypot(o.x - x, o.y - y) > (o.sp.w + b.sp.w) * 0.45 * scale;
-    return flock.every((o) => o === b || !o.perch || (o.perch !== el && gap(o)));
-  }
-
-  // Fly to a free perch, preferring ones in view; `enter` flies in from past the nearest screen edge.
-  function takeoff(b, px, py, enter) {
-    if (document.hidden || flock.filter(flying).length > 1) return;
-    const [vw, vh] = [innerWidth, innerHeight];
-    let to;
-    let best = Infinity;
-    for (const [el, s] of spots) {
-      if (el === b.perch || !free(el, b) || Math.hypot(s.x - px, s.y - py) < 220) continue;
-      const seen = s.x > 40 && s.x < vw - 40 && s.y > 40 && s.y < vh - 40;
-      const hop = Math.abs(Math.hypot(s.x - b.x, s.y - b.y) - rand(250, 600));
-      const score = (seen ? 0 : enter ? Infinity : 1e5) + hop;
-      if (score < best) [best, to] = [score, el];
-    }
-    if (!to) return;
-    const s = spots.get(to);
-    let [x0, y0, a0] = [b.x, b.y, b.a];
-    if (enter) {
-      // Never from below the end of the page, which would make it taller.
-      const gaps = [s.x - 0, vw - s.x, s.y - 0, vh - s.y];
-      const edge = gaps.indexOf(Math.min(...gaps));
-      const out = b.sp.w;
-      x0 = edge === 0 ? -out : edge === 1 ? vw + out : s.x + rand(-150, 150);
-      y0 = edge === 2 ? -out : edge === 3 ? vh + out : s.y + rand(-150, 150);
-      a0 = Math.atan2(s.x - x0, y0 - s.y) / DEG;
-    }
-    let dx = Math.sin(a0 * DEG);
-    let dy = -Math.cos(a0 * DEG);
-    if (!enter) {
-      // Flee from the pointer first.
-      const away = Math.hypot(x0 - px, y0 - py) || 1;
-      dx = dx / 2 + (x0 - px) / away;
-      dy = dy / 2 + (y0 - py) / away;
-    }
-    const chord = Math.hypot(s.x - x0, s.y - y0);
-    const reach = clamp(chord / 2, 60, 240) / (Math.hypot(dx, dy) || 1);
-    const bend = rand(-0.3, 0.3);
-    const x1 = x0 + dx * reach - (s.y - y0) * bend;
-    const y1 = y0 + dy * reach + (s.x - x0) * bend;
-    const c = clamp(chord * 0.35, 40, 180);
-    const length = (chord + Math.hypot(x1 - x0, y1 - y0) + Math.hypot(s.x - x1, s.y - y1) + c) / 2;
-    // Land facing the way it arrives: head down when coming from above (same footprint as head up).
-    Object.assign(b, { perch: to, x: s.x, y: s.y, a: (s.y > y0 ? 180 : 0) + rand(-10, 10) });
-    clearTimeout(b.timer);
-    b.timer = 0;
-    const d = clamp(length / rand(250, 450), 0.8, 3);
-    const lift = Math.min(1, chord / 450);
-    play(b, { fly: true, x0, y0, x1, y1, c, d, lift, ph: 0, hd: a0, seed: rand(0, 6), hz: b.sp.w > 120 ? 4 : 6 });
-    return true;
-  }
-
-  function startle(event, radius) {
-    const x = event.clientX - ox;
-    const y = event.clientY - oy;
-    let near;
-    for (const b of flock) {
-      const distance = Math.hypot(b.x - x, b.y - y);
-      if (!flying(b) && distance < radius) [radius, near] = [distance, b];
-    }
-    if (near) takeoff(near, x, y);
-  }
-
-  function onMove(event) {
-    if (event.pointerType !== 'touch') startle(event, 110);
-  }
-
-  function onTap(event) {
-    if (event.target.closest?.('a,button,input,textarea,select,label') || getSelection()?.isCollapsed === false) return;
-    startle(event, 160);
-  }
-
-  function onVisibility() {
-    for (const b of flock) {
-      if (document.hidden) stop(b);
-      rest(b);
+  function startle(event) {
+    const x = event.clientX, y = event.clientY;
+    for (const a of cast) {
+      if (Math.hypot(a.x - x, a.y - y) < 110) {
+        const [gx, gy] = away(a.x, a.y);
+        a.goal = { x: clamp(a.x + gx * 260, 24, W - 24), y: clamp(a.y + gy * 260, 48, VH - 40) };
+        launch(a);
+      }
     }
   }
+  function onMove(e) { if (e.pointerType !== 'touch') startle(e); }
+  function onTap(e) { if (!e.target?.closest?.('a,button,input,textarea,select,label')) startle(e); }
 
   function setMotion(isStill) {
     motion?.abort();
     motion = isStill ? null : new AbortController();
-    for (const b of flock) {
-      clearTimeout(b.timer);
-      b.timer = 0;
-      stop(b);
-      rest(b);
-    }
-    if (!motion) return;
-    const options = { passive: true, signal: motion.signal };
-    addEventListener('pointermove', onMove, options);
-    addEventListener('click', onTap, options);
-    document.addEventListener('visibilitychange', onVisibility, options);
-  }
-
-  // Cache perch landing points. The blog has no main/header/footer prose to avoid,
-  // so the walk is a no-op; the spots are the garden decor itself (lamp/bench/lavender).
-  function measure() {
-    const box = layer.getBoundingClientRect();
-    ox = box.left;   // ADAPTATION 2：图层是 fixed，视口坐标即图层坐标，不加滚动偏移
-    oy = box.top;
-    scale = phone.matches ? 0.7 : 1;
-    spots = new Map();
-    for (const el of document.querySelectorAll('[data-perch]')) {
-      if (!el.getClientRects().length) continue;
-      const r = el.getBoundingClientRect();
-      const [fx, fy] = `${el.dataset.perch},`.split(',').map((v) => (v.trim() && isFinite(v) ? +v : 0.5));
-      const x = r.left + fx * r.width;
-      const y = r.top + fy * r.height;
-      spots.set(el, { x: x - box.left, y: y - box.top });
-    }
-  }
-
-  function home(b, el) {
-    if (!spots.has(el) || !free(el, b)) el = [...spots.keys()].find((p) => free(p, b));
-    if (!el) return false;
-    Object.assign(b, spots.get(el), { perch: el, a: rand(-10, 10) });
-    draw(b, b.x, b.y, b.a);
-    return true;
-  }
-
-  // Keep butterflies on their perches as the layout changes, and match the wanted count.
-  function sync() {
-    let want = parseInt(document.body.dataset.butterflies ?? 0);   // 博客默认 0：未表态不羽化（ADAPTATION 6）
-    if (!(want >= 0)) want = 0;
-    want = Math.min(want, phone.matches ? 2 : want);
-    for (const b of flock) {
-      const s = spots.get(b.perch);
-      if (!s) {
-        stop(b);
-        b.perch = null;
-      } else {
-        Object.assign(b, s);
-        if (!b.anim) draw(b, b.x, b.y, b.a);
-      }
-    }
-    while (flock.length > want) drop(flock.at(-1));
-    for (const b of [...flock]) if (!b.perch && !home(b)) drop(b);
-    for (let i = flock.length; i < want; i++) {
-      const b = hatch(SPECIES[i % SPECIES.length]);
-      if (!home(b)) return drop(b);
-    }
+    if (motion) {
+      const options = { passive: true, signal: motion.signal };
+      addEventListener('pointermove', onMove, options);
+      addEventListener('click', onTap, options);
+      run();
+    } else halt();
   }
 
   function remeasure() {
     clearTimeout(measureTimer);
-    measureTimer = setTimeout(() => {
-      measure();
-      sync();
-    }, 150);
+    measureTimer = setTimeout(() => { measure(); sync(); }, 150);
   }
+
+  /* ---------------- 图层常驻（数量由 dataset 决定，0 即空层） ---------------- */
+  layer = document.createElement('div');
+  layer.className = 'bf-layer';
+  layer.setAttribute('aria-hidden', 'true');
+  document.body.append(layer);
 
   measure();
   sync();
   onMotion(setMotion);
   addEventListener('resize', remeasure);
-  addEventListener('butterflies:sync', remeasure);   // ADAPTATION 4：fx 开关的入口
-  new ResizeObserver(remeasure).observe(document.body);   // 原站尾部同款：布局变化后落点重测
+  addEventListener('butterflies:sync', remeasure);   // feed.js 改完 dataset 后派发（ADAPTATION 6）
+  new ResizeObserver(remeasure).observe(document.body);
   if (document.fonts?.ready) document.fonts.ready.then(remeasure);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) run(); });
 
-  /* fx 开关入口：n=0 清空，n=3 恢复栖息群。feed.js 的 applyFx 在 fx=blossom 时传 3。 */
   window.Butterflies = {
-    setCount(n) {
-      document.body.dataset.butterflies = String(Math.max(0, n | 0));
-      remeasure();
-    },
+    setEnabled(on) { document.body.dataset.butterflies = on ? '10' : '0'; measure(); sync(); },
+    setCount(n) { document.body.dataset.butterflies = String(Math.max(0, n | 0)); sync(); },
   };
 })();

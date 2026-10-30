@@ -31,7 +31,7 @@ function applyFx(mode) {
   const m = mode === 'blossom' || mode === 'off' ? mode : 'snow';
   if (window.Snow) Snow.setEnabled(m === 'snow');
   if (window.Blossom) Blossom.setEnabled(m === 'blossom');
-  document.body.dataset.butterflies = m === 'blossom' ? '3' : '0';   // 蝴蝶只随桃花出现
+  document.body.dataset.butterflies = m === 'blossom' ? '10' : '0';   // 蝴蝶只随桃花出现（companion 式自由飞群）
   dispatchEvent(new Event('butterflies:sync'));   // 通知 butterflies.js 按 dataset 重排（其内自带 150ms 去抖）
 }
 
