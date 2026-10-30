@@ -115,7 +115,7 @@
 .mu-play:hover { background: #EAF7EF; }
 .mu-play:active { background: #DCEFE5; }
 
-.mu-mode { width: auto; padding: 0 7px; gap: 3px; font-size: 11px; color: #9A9A9A; }
+.mu-mode { width: auto; padding: 0 7px; gap: 3px; font-size: 11px; color: #9A9A9A; white-space: nowrap; }
 .mu-mode svg { width: 15px; height: 15px; }
 .mu-mode-label { line-height: 1; }
 .mu-ctrls .mu-mode { margin-right: auto; }
@@ -166,11 +166,14 @@
     to   { opacity: 0; transform: scale(.15); }
   }
   .mu-handle { display: block; }
-  /* 手机音量由系统侧键控制，面板里再放一个音量键是无效控件 */
+  /* 音量控件在移动端隐藏（手机音量交给系统侧键，留着就是无效控件）*/
   .mu-volwrap { display: none; }
-  .mu-ctrls { gap: 10px; }
-  .mu-btn { width: 36px; height: 36px; }
+  /* 必须排除 .mu-mode：它也带 .mu-btn 类，媒体查询在文件末尾、同权重下会赢过
+     `.mu-mode { width: auto }`，把"图标+文字"的模式键压成 36px，实测文字被挤到 11px。 */
+  .mu-btn:not(.mu-mode) { width: 36px; height: 36px; }
+  .mu-mode { height: 36px; padding: 0 9px; }
   .mu-play { width: 42px; height: 42px; }
+  .mu-ctrls { gap: 8px; }
   /* 触摸目标变大后，进度条也要跟着加厚一点才好拖 */
   .mu-bar { height: 20px; }
 }
