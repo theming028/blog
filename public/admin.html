@@ -189,6 +189,30 @@
               <label class="adm-seg-item"><input type="radio" name="fx" value="off"><svg viewBox="0 0 24 24"><path d="M12 7c2.8 0 5.3 1.3 7 3.4-1.7 2.1-4.2 3.4-7 3.4s-5.3-1.3-7-3.4C6.7 8.3 9.2 7 12 7zm0-2C6.5 5 2.7 7.9 1 10.4c1.7 2.5 5.5 5.4 11 5.4s9.3-2.9 11-5.4C21.3 7.9 17.5 5 12 5z" fill="currentColor"/><path d="m4 3 16 16-1.4 1.4L2.6 4.4z" fill="currentColor"/></svg>关闭</label>
             </div>
           </div>
+          <!-- 背景音乐播放器：开关 + 歌单在同一表单、同一个保存键，
+               与封面/昵称一致，避免"改了列表以为已经生效" -->
+          <div class="adm-field">
+            <label>背景音乐播放器 <span class="hint">右下角悬浮球；停用或歌单为空时前台不出现</span></label>
+            <div class="adm-seg" id="playerSeg">
+              <label class="adm-seg-item"><input type="radio" name="player" value="on"><svg viewBox="0 0 24 24"><path d="M20 3.5 9.6 6v9.1a3.6 3.6 0 1 0 1.8 3.1V9.3l7-1.6z" fill="currentColor"/></svg>启用</label>
+              <label class="adm-seg-item"><input type="radio" name="player" value="off"><svg viewBox="0 0 24 24"><path d="M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm-1.4 4.6 4.6 3.4-4.6 3.4z" fill="currentColor"/><path d="m4 3 16 16" stroke="currentColor" stroke-width="1.7" fill="none"/></svg>停用</label>
+            </div>
+          </div>
+          <div class="adm-field">
+            <label>歌单 <span class="hint" id="plCount">最多 50 首 · 只支持 https 直链，本站不存放音频文件</span></label>
+            <div class="pl-list" id="plList"></div>
+            <!-- 新增区：字段纵向一行一个；填一半想放弃有点「取消」，不靠点别处隐式清空 -->
+            <div class="pl-add" id="plAdd">
+              <div class="pl-add-row"><label>歌曲名称 <i>*</i></label><input class="adm-input" id="plTitle" type="text" maxlength="60" placeholder="显示在播放器上"></div>
+              <div class="pl-add-row"><label>艺人 / 出处</label><input class="adm-input" id="plArtist" type="text" maxlength="40" placeholder="选填"></div>
+              <div class="pl-add-row"><label>音频直链 <i>*</i></label><input class="adm-input" id="plUrl" type="url" maxlength="2048" placeholder="https://example.com/song.mp3"></div>
+              <div class="pl-add-row"><label>封面直链</label><input class="adm-input" id="plCover" type="url" maxlength="2048" placeholder="选填，https 图片地址"></div>
+              <div class="pl-add-acts">
+                <button class="adm-btn" id="plCancel" type="button" hidden>取消</button>
+                <button class="adm-btn primary" id="plAppend" type="button">添加歌曲</button>
+              </div>
+            </div>
+          </div>
           <div class="adm-form-actions"><button class="adm-btn primary" id="btnSetSave">保存设置</button></div>
         </div>
       </section>

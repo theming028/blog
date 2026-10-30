@@ -869,6 +869,11 @@ async function loadSettings() {
      全屏画布和一条 rAF，看起来还像"雪和桃花一起下"）。
      取数失败时 s.fx 是 undefined，落到默认 'snow'，不会因为一次请求失败就整站没特效。 */
   applyFx(s.fx);
+  /* 背景音乐播放器：开关与歌单都来自设置，歌单为空时组件自己不出场。
+     放在 applyFx 之后——两者都只依赖已经拿到的 settings，顺序无先后关系，
+     但播放器要等 DOM 建好，而 #feed 的重建会吞掉挂在它内部的任何东西，
+     所以 player 是 append 到 body 上的（见 player.js 头注）。 */
+  if (window.MusicPlayer) MusicPlayer.apply(s.player === 'on', s.playlist);
   $('#copyright').textContent = `© ${new Date().getFullYear()} ${s.nickname || ''} · 朝夕光年`;
 }
 

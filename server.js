@@ -27,8 +27,11 @@ const IMAGE_SIGNATURES = {
 /* 唯一的数据源默认值：前端不再各自抄一份（此前散在 index.html 兜底 src、
  * feed.js state.settings、admin.js DEFAULTS 共 4 处，改封面时真实漏改过）。
  * 对外只通过 GET /api/settings 下发，且只回下面这几个键，服务端自用键不外泄。 */
-const PUBLIC_SETTING_KEYS = ['cover', 'avatar', 'nickname', 'sign', 'fx'];
+const PUBLIC_SETTING_KEYS = ['cover', 'avatar', 'nickname', 'sign', 'fx', 'player', 'playlist'];
 const FX_VALUES = ['snow', 'blossom', 'off'];
+const PLAYER_VALUES = ['on', 'off'];
+const PLAYLIST_MAX = 50;          // 上限：歌单是配置类数据，不该无限膨胀
+const TITLE_MAX = 60, ARTIST_MAX = 40;
 const DEFAULT_SETTINGS = {
   cover: '/demo/cover.png',
   avatar: '/demo/ming.jpg',
@@ -37,7 +40,33 @@ const DEFAULT_SETTINGS = {
   /* 飘落特效：三选一，互斥。值是字符串（setSettings 走 String(v).trim()）。
      取数失败时前端拿到 undefined，会退回这个默认值，不会整站没特效。 */
   fx: 'snow',
+  /* 背景音乐播放器：默认关闭。歌单只存外链地址与文本，音频文件不进库
+     （db.json 已内嵌 base64 图片，再塞音频会让每次发布都重传几十 MB）。 */
+  player: 'off',
+  playlist: [],
 };
+
+/* 歌单条目清洗：地址必须是 http(s) 直链（复用 safeHttpUrl 的协议白名单与凭证抹除），
+   标题必填、艺人与封面选填，长度一律截断——与音视频外链同一套口径。
+   非法条目直接丢弃而不是报错：后台一次保存整张列表，个别行填错不该让整次保存失败。 */
+function sanitizePlaylist(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const it of raw) {
+    if (!it || typeof it !== 'object') continue;
+    const url = safeHttpUrl(it.url);
+    const title = String(it.title == null ? '' : it.title).trim().slice(0, TITLE_MAX);
+    if (!url || !title) continue;               // 没有地址或标题的歌无法播放，也不该出现在列表里
+    const artist = String(it.artist == null ? '' : it.artist).trim().slice(0, ARTIST_MAX);
+    const cover = safeHttpUrl(it.cover);
+    out.push({
+      id: /^[A-Za-z0-9_-]{6,40}$/.test(String(it.id || '')) ? String(it.id) : 'song_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+      title, artist, url, cover: cover || null,
+    });
+    if (out.length >= PLAYLIST_MAX) break;
+  }
+  return out;
+}
 
 /* 访客填的主页、友链、音视频外链都走这一道：只允许 http(s)。统一"补协议 → new URL → 存 href"，
  * 存下来的值必然以 http(s):// 开头，javascript: / data: 之类进不来。 */
@@ -296,6 +325,11 @@ function publicSettings(raw) {
   const merged = { ...DEFAULT_SETTINGS, ...stored };
   if (FX_VALUES.indexOf(String(merged.fx).trim()) < 0) merged.fx = DEFAULT_SETTINGS.fx;
   else merged.fx = String(merged.fx).trim();
+  if (PLAYER_VALUES.indexOf(String(merged.player).trim()) < 0) merged.player = DEFAULT_SETTINGS.player;
+  else merged.player = String(merged.player).trim();
+  /* 库里可能存着旧版本或手工改坏的 playlist（非数组、元素缺标题/地址）。
+     读路径再收敛一次：前端拿到的 playlist 一定是可安全渲染的数组。 */
+  merged.playlist = Array.isArray(merged.playlist) ? sanitizePlaylist(merged.playlist) : [];
   const out = {};
   for (const k of PUBLIC_SETTING_KEYS) out[k] = merged[k];
   return out;
@@ -749,10 +783,14 @@ async function handleApi(req, res, pathname, query) {
     const patch = {};
     for (const k of PUBLIC_SETTING_KEYS) {
       if (b[k] === undefined) continue;
+      /* playlist 是数组，不能走下面那条 String() 通道——
+         String([{...}]) 会得到 "[object Object]"，整张歌单会被静默写成一句乱码字符串。 */
+      if (k === 'playlist') { patch.playlist = sanitizePlaylist(b.playlist); continue; }
       const v = String(b[k]).trim();
       /* fx 是枚举值，写路径同样要把关：只靠读路径收敛的话，非法值会永久躺在库里，
          界面上选中项与库里存的值对不上，排查时极易误判成「我明明选了桃花」。 */
       if (k === 'fx' && FX_VALUES.indexOf(v) < 0) return sendError(res, 400, '特效取值只能是 snow / blossom / off');
+      if (k === 'player' && PLAYER_VALUES.indexOf(v) < 0) return sendError(res, 400, '播放器开关只能是 on / off');
       patch[k] = v;
     }
     const saved = await store.setSettings(patch);

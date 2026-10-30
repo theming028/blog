@@ -217,6 +217,31 @@ UPDATE posts SET media = '[]'::jsonb WHERE media IS NULL;
 缺列时 `SupabaseStore.supportsMedia()` 会探测到并**降级为不带 media 字段照发**，
 同时在响应里回 `warning`、编辑页当面提示"视频未保存"——否则这个可选功能会把全站
 发帖与编辑打成 500（`createPost` 无条件带 media，缺列就是整条写入被 PostgREST 打回）。
+
+## 背景音乐播放器
+
+右下角悬浮球，点开在上方弹出卡片面板；后台「设置 → 背景音乐播放器」可启用/停用并管理歌单。
+实现 `public/js/player.js` + `public/css/player.css`，功能面参照 abcdtfk.icu 的
+`persistent-player`（悬浮球 + 封面/曲名/艺人/进度/循环模式/上下曲/音量），**代码与样式全部自研，
+未使用对方代码或素材**。
+
+- **只存外链，不存音频**：`settings.playlist` 每项只有 `{id,title,artist,url,cover}`，
+  地址走 `safeHttpUrl`（协议白名单 + 抹掉 `good.com@evil.com` 内嵌凭证），标题必填、
+  长度截断、最多 50 首。`db.json` 已内嵌 base64 图片，再塞音频会让每次发布重传几十 MB。
+  因此**源站必须支持 Range**，否则进度条拖不动（与音视频同一约束）。
+- **playlist 是数组，不能走设置里的 `String(v).trim()` 通道**——那会把整张歌单写成
+  一句 `[object Object]`。写路径单独走 `sanitizePlaylist`，读路径再收敛一次
+  （库里可能存着手工改坏的值）。
+- **挂在 `body` 上而不是 `#feed` 里**：信息流翻页与评论刷新会整块重建 `#feed` 的 innerHTML，
+  播放器若在其内会被连带销毁、正在播的歌就断了。已实测"重建 `#feed` 后仍在播放"。
+- **移动端（<720px）只留悬浮球、不展开面板**，点球即播放/暂停。
+- **`prefers-reduced-motion` 下唱片不旋转**，与雪/花瓣画布同口径。
+- 播放模式（顺序/单曲/随机）、音量、上次播到第几首都记在 `localStorage`，
+  键名 `tm_mu_mode` / `tm_mu_vol` / `tm_mu_idx`；隐私模式写入失败被吞掉，不影响播放。
+- 外链失效时自动跳下一首，**连续失败满一轮才停**并提示，避免 `error → next → error` 静默死循环。
+- 层级 `z-index: 8`：高于内容列与飘落画布（5/6），低于评论浮层 30、导航 100、toast 260。
+- 默认 `player: 'off'`、`playlist: []`；**开关开着但歌单为空时前台不出现任何组件**。
+
 ## 发布
 
 QW Pages（动态页）：`category: "dynamic"`、`entrypoint: "server.js"`、`port: 8081`、`with_database: true`，先 provision 再建表。

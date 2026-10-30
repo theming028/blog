@@ -1,0 +1,130 @@
+/* 背景音乐播放器：右下角悬浮球 + 微信风白色卡片面板。
+ * 层级 8：高于内容列与飘落画布（5/6），低于评论浮层 .pop(30)、导航 .nav(100)、
+ * toast(260)、大图 viewer(300)、mask(400)。 */
+
+.mu { position: fixed; right: 20px; bottom: calc(24px + env(safe-area-inset-bottom)); z-index: 8; font-size: 14px; }
+
+/* ---------------- 悬浮球 ---------------- */
+.mu-fab {
+  display: block; width: 46px; height: 46px; margin-left: auto;
+  padding: 0; border: .5px solid var(--wx-line, #E7E7E7); border-radius: 50%;
+  background: #fff; color: var(--wx-green, #07C160); cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .1);
+  transition: transform .18s, box-shadow .18s;
+}
+.mu-fab:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(0, 0, 0, .14); }
+.mu-fab:active { transform: translateY(0); box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
+.mu-fab:focus-visible { outline: 2px solid var(--wx-green, #07C160); outline-offset: 2px; }
+.mu-fab-disc {
+  display: block; width: 100%; height: 100%; border-radius: 50%; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+}
+.mu-fab-disc svg { width: 22px; height: 22px; }
+.mu-fab-disc img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* 播放中唱片旋转；暂停即停在当前角度（比直接消失更贴合"暂停"语义） */
+.mu.is-playing .mu-fab-disc { animation: muSpin 9s linear infinite; }
+@keyframes muSpin { to { transform: rotate(360deg); } }
+
+/* ---------------- 面板 ---------------- */
+.mu-panel {
+  position: absolute; right: 0; bottom: 56px; width: 268px;
+  padding: 12px 14px 10px; background: #fff;
+  border: .5px solid var(--wx-line, #E7E7E7); border-radius: 12px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .12);
+  opacity: 0; transform: translateY(8px) scale(.98); pointer-events: none;
+  transition: opacity .18s, transform .18s;
+}
+.mu.is-open .mu-panel { opacity: 1; transform: none; pointer-events: auto; }
+
+.mu-now { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.mu-cover {
+  flex: none; width: 40px; height: 40px; border-radius: 6px; overflow: hidden;
+  background: #F2F2F2; color: #B2B2B2;
+  display: flex; align-items: center; justify-content: center;
+}
+.mu-cover svg { width: 20px; height: 20px; }
+.mu-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.mu-meta { min-width: 0; flex: 1; }
+.mu-title {
+  color: #191919; font-size: 14px; line-height: 1.35;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mu-artist {
+  color: #9A9A9A; font-size: 12px; line-height: 1.4; margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* 进度条：自绘（不用 input[range]，样式在微信风下更好控制，且支持键盘方向键） */
+.mu-bar { position: relative; height: 14px; margin: 10px 0 2px; cursor: pointer; touch-action: none; }
+.mu-bar::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 50%; margin-top: -2px;
+  height: 4px; border-radius: 2px; background: #E7E7E7;
+}
+.mu-fill {
+  position: absolute; left: 0; top: 50%; margin-top: -2px; height: 4px; width: 0;
+  border-radius: 2px; background: var(--wx-green, #07C160);
+}
+.mu-knob {
+  position: absolute; top: 50%; left: 0; width: 10px; height: 10px; margin: -5px 0 0 -5px;
+  border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .28);
+  opacity: 0; transition: opacity .15s;
+}
+.mu-bar:hover .mu-knob, .mu-bar:focus-visible .mu-knob, .mu.is-playing .mu-knob { opacity: 1; }
+.mu-bar:focus-visible { outline: 2px solid var(--wx-green, #07C160); outline-offset: 2px; border-radius: 4px; }
+
+.mu-time { display: flex; justify-content: space-between; font-size: 11px; color: #B2B2B2; font-variant-numeric: tabular-nums; }
+
+/* ---------------- 控件行 ---------------- */
+.mu-ctrls { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
+.mu-btn {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; padding: 0; border: 0; border-radius: 6px;
+  background: transparent; color: #576B95; cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.mu-btn:hover { background: #F2F5FA; }
+.mu-btn:active { background: #E8EDF5; }
+.mu-btn:focus-visible { outline: 2px solid var(--wx-green, #07C160); outline-offset: -2px; }
+.mu-btn svg { width: 18px; height: 18px; }
+.mu-play { color: var(--wx-green, #07C160); width: 34px; height: 34px; }
+.mu-play svg { width: 22px; height: 22px; }
+.mu-play:hover { background: #EAF7EF; }
+.mu-play:active { background: #DCEFE5; }
+
+.mu-mode { width: auto; padding: 0 7px; gap: 3px; font-size: 11px; color: #9A9A9A; }
+.mu-mode svg { width: 15px; height: 15px; }
+.mu-mode-label { line-height: 1; }
+.mu-ctrls .mu-mode { margin-right: auto; }
+
+/* 音量：点音量键浮出滑条 */
+.mu-volwrap { position: relative; display: inline-flex; }
+.mu-range {
+  position: absolute; right: 0; bottom: 34px; width: 0; height: 30px;
+  opacity: 0; pointer-events: none; transition: opacity .15s;
+  accent-color: var(--wx-green, #07C160);
+}
+.mu.show-vol .mu-range { width: 96px; opacity: 1; pointer-events: auto; }
+
+/* ---------------- 提示条（复用站内的观感，但不依赖 feed.js 的 toast）---------------- */
+.mu-toast {
+  position: fixed; left: 50%; bottom: calc(84px + env(safe-area-inset-bottom));
+  transform: translateX(-50%) translateY(8px);
+  background: rgba(0, 0, 0, .8); color: #fff; font-size: 13px;
+  padding: 8px 14px; border-radius: 6px; opacity: 0; pointer-events: none;
+  transition: opacity .22s, transform .22s; z-index: 261; max-width: 78vw; text-align: center;
+}
+.mu-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ---------------- 移动端：只留悬浮球，不展开面板 ---------------- */
+@media (max-width: 719px) {
+  .mu { right: 14px; bottom: calc(76px + env(safe-area-inset-bottom)); }
+  .mu-fab { width: 42px; height: 42px; }
+  .mu-panel { display: none; }
+}
+
+/* ---------------- 减弱动效：唱片不转、面板不做位移动画 ---------------- */
+@media (prefers-reduced-motion: reduce) {
+  .mu.is-playing .mu-fab-disc { animation: none; }
+  .mu-panel, .mu-fab, .mu-toast, .mu-knob { transition: none; }
+  .mu.is-open .mu-panel { transform: none; }
+}

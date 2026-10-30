@@ -9,6 +9,7 @@
 <!-- 首屏花园背景：改编自 hibi.garden（MIT）© schmayterling，静态日间版，仅桌面显示。
      素材与几何说明见 /css/garden-bg.css 头注与 README。 -->
 <link rel="stylesheet" href="/css/garden-bg.css">
+<link rel="stylesheet" href="/css/player.css">
 </head>
 <body>
 <!-- 花园必须排在 .phone 之前：两者都是定位元素、按 DOM 顺序绘制，靠后的 .phone 才能压住它 -->
@@ -133,6 +134,7 @@
 <!-- snow.js / blossom.js 必须在 feed.js 之前：feed.js 读到设置后直接调它们的 setEnabled -->
 <script src="/js/snow.js"></script>
 <script src="/js/blossom.js"></script>
+<script src="/js/player.js"></script>
 <script src="/js/feed.js"></script>
 </body>
 </html>

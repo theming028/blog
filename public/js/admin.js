@@ -100,8 +100,110 @@ function renderSettings() {
   const r = document.querySelector('#fxSeg input[value="' + want + '"]');
   if (r) r.checked = true;
   paintFx();
+  // 播放器开关 + 歌单草稿：只在初次加载与保存成功后重置，切视图不动（同昵称/签名的处理口径）
+  const pr = document.querySelector('#playerSeg input[value="' + (settings.player === 'on' ? 'on' : 'off') + '"]');
+  if (pr) pr.checked = true;
+  paintPlayer();
+  plDraft = (Array.isArray(settings.playlist) ? settings.playlist : []).map((t) => ({ ...t }));
+  plCancelEdit();
+  renderPlaylist();
 }
 $('#fxSeg').addEventListener('change', paintFx);
+
+/* ============ 歌单编辑（草稿态，随「保存设置」一次写回） ============ */
+let plDraft = [];
+let plEditing = null;   // 正在编辑的条目 id；null 表示新增
+
+function playerValue() {
+  const el = document.querySelector('#playerSeg input:checked');
+  return el ? el.value : 'off';
+}
+function paintPlayer() {
+  $$('#playerSeg .adm-seg-item').forEach((l) => l.classList.toggle('on', !!l.querySelector('input').checked));
+}
+$('#playerSeg').addEventListener('change', paintPlayer);
+
+/* 只显示主机名：让管理员一眼看出哪首歌依赖别人的服务器（外链失效是这类播放器最常见的故障） */
+function plHost(u) { try { return new URL(u).host; } catch (e) { return '—'; } }
+
+function renderPlaylist() {
+  const box = $('#plList');
+  $('#plCount').textContent = `已添加 ${plDraft.length} 首 · 最多 50 首 · 只支持 https 直链，本站不存放音频文件`;
+  if (!plDraft.length) {
+    box.innerHTML = '<div class="pl-empty">歌单为空，前台不会出现播放器</div>';
+    return;
+  }
+  box.innerHTML = plDraft.map((t, i) => `
+    <div class="pl-row${plEditing === t.id ? ' editing' : ''}" data-id="${esc(t.id)}">
+      <div class="pl-info">
+        <div class="pl-name">${esc(t.title)}</div>
+        <div class="pl-sub">${esc(t.artist || '未填艺人')} · ${esc(plHost(t.url))}${t.cover ? ' · 有封面' : ''}</div>
+      </div>
+      <div class="pl-ops">
+        <button class="adm-btn sm" data-pl="up" type="button" ${i === 0 ? 'disabled' : ''} title="上移">↑</button>
+        <button class="adm-btn sm" data-pl="down" type="button" ${i === plDraft.length - 1 ? 'disabled' : ''} title="下移">↓</button>
+        <button class="adm-btn sm" data-pl="edit" type="button">编辑</button>
+        <button class="adm-btn sm danger" data-pl="del" type="button">删除</button>
+      </div>
+    </div>`).join('');
+}
+
+$('#plList').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-pl]');
+  if (!btn) return;
+  const row = btn.closest('.pl-row');
+  const id = row && row.dataset.id;
+  const i = plDraft.findIndex((t) => t.id === id);
+  if (i < 0) return;
+  const op = btn.dataset.pl;
+  if (op === 'up' && i > 0) { [plDraft[i - 1], plDraft[i]] = [plDraft[i], plDraft[i - 1]]; }
+  else if (op === 'down' && i < plDraft.length - 1) { [plDraft[i + 1], plDraft[i]] = [plDraft[i], plDraft[i + 1]]; }
+  else if (op === 'del') {
+    // confirmDlg 是异步的，必须 await：不 await 时它返回 Promise（恒为真），确认框等于没做
+    if (!await confirmDlg('删除《' + plDraft[i].title + '》？保存设置后生效', '删除')) return;
+    plDraft.splice(i, 1);
+    if (plEditing === id) plCancelEdit();
+  } else if (op === 'edit') {
+    plEditing = id;
+    const t = plDraft[i];
+    $('#plTitle').value = t.title || ''; $('#plArtist').value = t.artist || '';
+    $('#plUrl').value = t.url || ''; $('#plCover').value = t.cover || '';
+    $('#plAppend').textContent = '保存修改';
+    $('#plCancel').hidden = false;
+    $('#plTitle').focus();
+  }
+  renderPlaylist();
+});
+
+function plCancelEdit() {
+  plEditing = null;
+  ['plTitle', 'plArtist', 'plUrl', 'plCover'].forEach((k) => { $('#' + k).value = ''; });
+  $('#plAppend').textContent = '添加歌曲';
+  $('#plCancel').hidden = true;
+}
+$('#plCancel').addEventListener('click', () => { plCancelEdit(); renderPlaylist(); });
+
+$('#plAppend').addEventListener('click', () => {
+  const title = $('#plTitle').value.trim();
+  const url = $('#plUrl').value.trim();
+  if (!title) { alertDlg('歌曲名称不能为空'); $('#plTitle').focus(); return; }
+  if (!/^https?:\/\//i.test(url)) { alertDlg('音频地址必须是 http(s) 直链'); $('#plUrl').focus(); return; }
+  const entry = {
+    id: plEditing || ('song_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)),
+    title: title.slice(0, 60), artist: $('#plArtist').value.trim().slice(0, 40),
+    url: url.slice(0, 2048), cover: $('#plCover').value.trim().slice(0, 2048) || null,
+  };
+  if (plEditing) {
+    const i = plDraft.findIndex((t) => t.id === plEditing);
+    if (i >= 0) plDraft[i] = entry;
+  } else {
+    if (plDraft.length >= 50) { alertDlg('歌单最多 50 首'); return; }
+    plDraft.push(entry);
+  }
+  plCancelEdit();
+  renderPlaylist();
+  showToast('已加入草稿，点「保存设置」后生效');
+});
 
 function renderStats() {
   const total = posts.length;
@@ -610,8 +712,13 @@ $('#btnSetSave').addEventListener('click', async () => {
   try {
     const r = await api('/api/settings', {
       method: 'PUT',
-      // 五项一次写完：合并成一个设置页之后再拆开保存就白合了
-      body: { cover: settings.cover, avatar: settings.avatar, nickname: nick, sign: $('#signInput').value.trim(), fx: fxValue() },
+      // 七项一次写完：合并成一个设置页之后再拆开保存就白合了
+      body: {
+        cover: settings.cover, avatar: settings.avatar, nickname: nick, sign: $('#signInput').value.trim(),
+        fx: fxValue(), player: playerValue(),
+        // 送草稿而不是送 settings：编辑还没保存前，页面上看到的就该是即将生效的内容
+        playlist: plDraft,
+      },
     });
     settings = r.settings; // 服务端回的是合并后的完整值，不再需要本地默认值兜底
     renderSettings();
