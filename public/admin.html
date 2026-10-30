@@ -217,6 +217,10 @@
               <div class="pl-add-row"><label>艺人 / 出处</label><input class="adm-input" id="plArtist" type="text" maxlength="40" placeholder="选填"></div>
               <div class="pl-add-row"><label>音频直链 <i>*</i></label><input class="adm-input" id="plUrl" type="url" maxlength="2048" placeholder="https://example.com/song.mp3"></div>
               <div class="pl-add-row"><label>封面直链</label><input class="adm-input" id="plCover" type="url" maxlength="2048" placeholder="选填，https 图片地址"></div>
+              <div class="pl-add-row pl-check">
+                <label><input type="checkbox" id="plAutoplay"> 进入页面时自动播放这首歌</label>
+                <span class="hint">浏览器会拦截无用户交互的有声自动播放，首次访问可能仍需点一下才会响</span>
+              </div>
               <div class="pl-add-acts">
                 <button class="adm-btn" id="plCancel" type="button" hidden>取消</button>
                 <button class="adm-btn primary" id="plAppend" type="button">添加歌曲</button>

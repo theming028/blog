@@ -62,6 +62,8 @@ function sanitizePlaylist(raw) {
     out.push({
       id: /^[A-Za-z0-9_-]{6,40}$/.test(String(it.id || '')) ? String(it.id) : 'song_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
       title, artist, url, cover: cover || null,
+      // 每首歌各自决定是否自动播放（与 post.media 的 autoplay 同一套语义）
+      autoplay: !!it.autoplay,
     });
     if (out.length >= PLAYLIST_MAX) break;
   }

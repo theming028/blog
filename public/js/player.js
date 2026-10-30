@@ -23,6 +23,7 @@
 
   let root = null, audio = null, els = {};
   let tracks = [], idx = -1, mode = 0, playing = false, failed = 0, wantPlay = false;
+  let booted = false;   // 本次页面装载是否已尝试过自动播放
 
   const ls = {
     get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } },
@@ -260,19 +261,26 @@
   const EDGE = 8;               // 距视口边缘的最小留白
   const DRAG_THRESHOLD = 5;     // 位移小于这个数按点击算，否则轻轻一点就被当成拖动
 
-  function navBottom() {
-    const n = document.querySelector('.nav');
-    return n ? n.getBoundingClientRect().bottom : 0;
-  }
   function clampPos(x, y) {
     const w = root.offsetWidth, h = root.offsetHeight;
-    // 顶边界取导航条下沿：球拖到导航底下会被 z-index 100 的 .nav 盖住，变成"点不到的球"。
-    // 取 max —— 导航比 EDGE 更深时以导航为准，用 min 会退化成 8px 白夹一场。
-    const minY = Math.max(EDGE, navBottom() + 4);
+    // 层级已高于 .nav，球压在导航上照样点得到，所以顶边界只需留出边缘间距
+    const minY = Math.max(EDGE, envTop());
     return {
       x: Math.min(Math.max(x, EDGE), Math.max(EDGE, innerWidth - w - EDGE)),
       y: Math.min(Math.max(y, minY), Math.max(minY, innerHeight - h - EDGE)),
     };
+  }
+  /* 刘海/状态栏高度：拖到最顶时也要让出来，否则球会盖住系统状态栏文字。
+     读一个探针元素的 computed margin-top 拿实际值，比猜像素可靠。 */
+  let _envTop = null;
+  function envTop() {
+    if (_envTop !== null) return _envTop;
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed;top:0;height:0;padding-top:env(safe-area-inset-top)';
+    document.body.appendChild(probe);
+    _envTop = parseFloat(getComputedStyle(probe).paddingTop) || 0;
+    probe.remove();
+    return _envTop;
   }
   function place(x, y) {
     const p = clampPos(x, y);
@@ -342,7 +350,7 @@
 
   function destroy() {
     if (audio) { audio.pause(); audio.src = ''; }
-    if (root) { root.remove(); root = null; audio = null; els = {}; idx = -1; playing = false; open = false; }
+    if (root) { root.remove(); root = null; audio = null; els = {}; idx = -1; playing = false; open = false; booted = false; }
   }
 
   window.MusicPlayer = {
@@ -359,14 +367,18 @@
       tracks = tracks_;
       mode = Math.min(MODES.length - 1, Math.max(0, Number(ls.get(LS.mode, 0)) || 0));
       paintMode(); paintPlay(); paintEnabled();
-      if (!tracks.length) { idx = -1; paintTrack(); return; }
-      if (changed) {
+      if (!tracks.length) { idx = -1; paintTrack(); booted = true; return; }
+      /* 自动播放只在本次页面装载时尝试一次：之后后台改设置或重进视图都不该
+         突然又冒出一段音乐，那属于"用户没要求的自动出声"。 */
+      if (changed || !booted) {
         const keep = idx >= 0 && idx < tracks.length ? idx : Number(ls.get(LS.idx, 0)) || 0;
+        const auto = !booted && !playing && !!(tracks[keep] && tracks[keep].autoplay);
         idx = -1;
-        load(keep, playing);          // 后台改了歌单：正在播就续播，没在播只准备好首曲
+        load(keep, playing || auto);   // 正在播就续播；没在播则看这首歌有没有标自动播放
       } else {
         paintTrack();
       }
+      booted = true;
     },
   };
 })();

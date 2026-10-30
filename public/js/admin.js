@@ -145,7 +145,7 @@ function renderPlaylist() {
   box.innerHTML = plDraft.map((t, i) => `
     <div class="pl-row${plEditing === t.id ? ' editing' : ''}" data-id="${esc(t.id)}">
       <div class="pl-info">
-        <div class="pl-name">${esc(t.title)}</div>
+        <div class="pl-name">${esc(t.title)}${t.autoplay ? '<span class="pl-auto">自动播放</span>' : ''}</div>
         <div class="pl-sub">${esc(t.artist || '未填艺人')} · ${esc(plHost(t.url))}${t.cover ? ' · 有封面' : ''}</div>
       </div>
       <div class="pl-ops">
@@ -178,6 +178,7 @@ $('#plList').addEventListener('click', async (e) => {
     const t = plDraft[i];
     $('#plTitle').value = t.title || ''; $('#plArtist').value = t.artist || '';
     $('#plUrl').value = t.url || ''; $('#plCover').value = t.cover || '';
+    $('#plAutoplay').checked = !!t.autoplay;
     $('#plAppend').textContent = '保存修改';
     $('#plCancel').hidden = false;
     $('#plTitle').focus();
@@ -188,6 +189,7 @@ $('#plList').addEventListener('click', async (e) => {
 function plCancelEdit() {
   plEditing = null;
   ['plTitle', 'plArtist', 'plUrl', 'plCover'].forEach((k) => { $('#' + k).value = ''; });
+  $('#plAutoplay').checked = false;
   $('#plAppend').textContent = '添加歌曲';
   $('#plCancel').hidden = true;
 }
@@ -202,6 +204,7 @@ $('#plAppend').addEventListener('click', () => {
     id: plEditing || ('song_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)),
     title: title.slice(0, 60), artist: $('#plArtist').value.trim().slice(0, 40),
     url: url.slice(0, 2048), cover: $('#plCover').value.trim().slice(0, 2048) || null,
+    autoplay: $('#plAutoplay').checked,
   };
   if (plEditing) {
     const i = plDraft.findIndex((t) => t.id === plEditing);

@@ -1,16 +1,20 @@
 /* 背景音乐播放器：右上角悬浮球 + 微信风白色卡片面板。
- * 层级 8：高于内容列与飘落画布（5/6），低于评论浮层 .pop(30)、导航 .nav(100)、
- * toast(260)、大图 viewer(300)、mask(400)。
  *
- * 默认位置在右上角、但落在导航条下方：.nav 是 fixed + z-index 100 且窄屏占满整行，
- * 球若放在真正的顶角会被导航盖住点不到（本组件层级只有 8）。
+ * 默认位置顶距与右距相等（同一个 --mu-edge，改一处两边同步）。为此层级必须高于
+ * .nav(100)：顶距 14px 时球压在导航条上，低于它就会被盖住变成点不到的球。
+ * 安全性核对过——导航是居中标题，右侧的 #navPublish 在前台是 display:none，
+ * 球不挡任何控件；同时仍低于表情面板 140 / toast 260 / 大图 viewer 300 / mask 400，
+ * 看大图时球不会浮在图像上。
  * 位置不做持久化——拖动只改内联 style，刷新即回到下面这个默认值。 */
 
 .mu {
+  --mu-edge: 14px;
   position: fixed;
-  top: calc(var(--nav-h, 48px) + env(safe-area-inset-top) + 10px);
-  right: 14px;
-  z-index: 8;
+  /* 刘海/状态栏用 env(safe-area-inset-top) 让出，保证"视觉顶距"仍等于右距；
+     笔记本与手机上该值为 0，此时 top 与 right 就是同一个 14px。 */
+  top: calc(env(safe-area-inset-top) + var(--mu-edge));
+  right: var(--mu-edge);
+  z-index: 101;
   font-size: 14px;
 }
 /* 拖动后改用 left/top 定位，必须放开 right——两端同时锚定会被拉回右侧 */
@@ -19,7 +23,7 @@
 /* ---------------- 悬浮球 ---------------- */
 .mu-fab {
   display: block; width: 46px; height: 46px; margin-left: auto;
-  padding: 0; border: .5px solid var(--wx-line, #E7E7E7); border-radius: 50%;
+  padding: 0; border: 3px solid var(--wx-line, #E7E7E7); border-radius: 50%;
   background: #fff; color: var(--wx-green, #07C160); cursor: pointer;
   box-shadow: 0 2px 10px rgba(0, 0, 0, .1);
   transition: transform .18s, box-shadow .18s;
