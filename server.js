@@ -490,7 +490,16 @@ function serveStatic(req, res, filePath) {
 const PRIVATE_HOST = /^(localhost|127\.|\[::1\]|0\.0\.0\.0|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/i;
 function isHttps(req) {
   if (process.env.FORCE_INSECURE_COOKIE === '1') return false;
-  if (req.headers['x-forwarded-proto'] === 'https') return true;
+  /* 反代明确说"这一跳是明文"就直接认它，不再走 Host 猜测。
+     shaoym.me 备案通过后先只上了 HTTP（证书还没签），Nginx 按 $scheme 传 http，
+     而 Host 是公网域名 → 旧逻辑会猜成 https 给 cookie 加 Secure，
+     浏览器在 http 页面把 cookie 丢掉 → 口令明明正确（接口回 200）却永远进不去后台。
+     伪造不了：两处 nginx 都是 proxy_set_header X-Forwarded-Proto $scheme（覆盖客户端自带值），
+     且 Node 只监听 127.0.0.1，能到它的只有本机反代。
+     多级代理时这个头是逗号链、最左段才是"客户端到第一跳"的协议，所以取第一段而不是整串比。 */
+  const xfp = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
+  if (xfp === 'http') return false;
+  if (xfp === 'https') return true;
   if (req.socket && req.socket.encrypted) return true;
   return !PRIVATE_HOST.test(String(req.headers.host || ''));
 }
