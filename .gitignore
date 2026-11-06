@@ -7,6 +7,10 @@ data/db.json
 data/*.tmp
 data/images/
 
+# 百度主动推送的 site/token 是凭据，而仓库是公开的：绝不允许入库。
+# 缺这一行的话 `git add -A` 会把它顺手带进公开仓库（data/ 目录本身没被整目录忽略）。
+data/baidu-push.json
+
 # 改动前的手工快照（放在项目外，这里只是双保险）
 .backup-*/
 
