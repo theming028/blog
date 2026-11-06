@@ -52,9 +52,17 @@
     </div>
   </div>
 
-  <!-- 详情页的返回链接：默认 hidden，服务端渲染 /p/<id> 时才摘掉标记。
-       它同时是详情页指回首页的站内链接，不能省。 -->
-  <div class="back-home" id="backHome" hidden><a href="/">‹ 返回朋友圈</a></div>
+  <!-- 详情页封面下方的返回行：默认 hidden，服务端渲染 /p/<id> 时才摘掉标记。
+       一行里两个动作，中间隔 16px：
+         ‹ 返回上一页 = 浏览器历史（button；不能用 href="javascript:..."，CSP 的 script-src 会拦，
+                        也不能用 href="#"，脚本失效时会把页面弹到顶部）
+         返回朋友圈   = 指向 / 的真链接，既是兜底（没有历史可退时也能回家），
+                        也是详情页唯一一条指回首页的站内链接——爬虫顺着它才能把权重走回列表页。
+       两者合成一行而不是上下叠两行：同屏出现两条"返回"会像是做错了。 -->
+  <div class="back-home" id="backHome" hidden>
+    <button type="button" id="backPrevBtn">‹ 返回上一页</button>
+    <a href="/">返回朋友圈</a>
+  </div>
   <!-- 信息流 -->
   <div class="feed" id="feed"><!--SSR:FEED:BEGIN--><div class="loading">加载中…</div><!--SSR:FEED:END--></div>
   <!-- 分页页码 -->

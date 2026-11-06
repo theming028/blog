@@ -11,6 +11,9 @@ body {
   --wx-blue: #576B95;
   --wx-blue-deep: #465577; /* 主按钮按下/悬停用 */
   --wx-text: #191919;
+  /* 正文字号唯一来源：.p-text 与「阅读全文」共用它，窄屏断点也只改这一处。
+     此前是 .p-text 与媒体查询里各写一份（14/16），再加一个要跟着正文走的元素就得抄第三份。 */
+  --p-text-size: 14px;
   --wx-gray: #B2B2B2;
   /* 次级文字：页脚说明、网上邻居标题、版权与访客计数共用一份。
      对比度按最坏底色（页面灰 #f0f0f0）量：旧值 #8A9099 只有 2.82:1，连大字号的
@@ -146,7 +149,7 @@ input, textarea, select { font-family: inherit; }
 .p-avatar { width: 42px; height: 42px; border-radius: 6px; margin-right: 12px; flex: none; object-fit: cover; background: #D8D8D8; }
 .p-body { flex: 1; min-width: 0; }
 .p-name { color: var(--wx-blue); font-size: 14px; font-weight: 600; line-height: 1.4; margin-bottom: 4px; display: inline-block; }
-.p-text { font-size: 14px; line-height: 1.55; color: var(--wx-text); white-space: pre-wrap; word-break: break-word; }
+.p-text { font-size: var(--p-text-size); line-height: 1.55; color: var(--wx-text); white-space: pre-wrap; word-break: break-word; }
 
 .p-grid { margin-top: 8px; display: grid; gap: 5px; grid-template-columns: repeat(3, 1fr); }
 .p-grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
@@ -161,10 +164,11 @@ input, textarea, select { font-family: inherit; }
    口径与 .p-single 一致：只给 width:100%，绝不加 max-height——那会把超高竖图压扁。 */
 .p-full { margin-top: 8px; }
 .p-full img { width: 100%; height: auto; display: block; cursor: zoom-in; background: #F2F2F2; }
-/* 「阅读全文」在时间左侧、两者间隔 8px。颜色用站内链接色 --wx-blue（白底上 5.23:1 达 AA）；
+/* 「阅读全文」在时间左侧、两者间隔 8px，字号跟正文走（--p-text-size，邵先生指定口径：
+   它是入口，不该比内容本身小一号）。颜色用站内链接色 --wx-blue（白底上 5.23:1 达 AA）；
    flex:none 是必须的：不锁住的话它会被 .p-time 挤到换行或被拉宽。
    详情页不输出这个链接（render.js 里按 ctx.detail 决定），所以这里不用额外隐藏规则。 */
-.p-read { margin-right: 8px; color: var(--wx-blue); font-size: 12px; flex: none; }
+.p-read { margin-right: 8px; color: var(--wx-blue); font-size: var(--p-text-size); flex: none; }
 .p-read:hover { color: var(--wx-blue-deep); text-decoration: underline; }
 
 /* 音视频：宽度与图片一致（撑满内容容器），不外套卡片、不加描边。
@@ -359,16 +363,25 @@ video.p-media-el { aspect-ratio: 16 / 10; object-fit: contain; }
 .pager .pg-arrow.disabled { color: #C9C9C9; pointer-events: none; }
 .pager .pg-num:hover:not(.cur) { background: #F2F2F2; }
 
-/* 详情页 /p/<id>：复用首页的壳，但封面大图和分页条属于"信息流"，
-   留在单页里就成了"封面 + 同一条内容再来一遍"，也稀释了这一页的主题。 */
-body[data-page="post"] .cover,
+/* 详情页 /p/<id>：分页条属于"信息流"，单页里留着没有意义，隐藏；
+   封面（大图 + 昵称 + 签名 + 头像）按邵先生要求保留——它是站点的门面，
+   详情页也不该长得像脱离了站点的孤页。 */
 body[data-page="post"] .pager { display: none; }
-/* 返回链接由服务端在 data-page=post 时点亮（hidden 属性被摘掉）。
-   它同时是一条站内链接：详情页要能被爬进首页权重池，不能是孤岛。 */
-.back-home { text-align: center; padding: 14px 0 0; }
+/* 详情页的评论表单是常驻的，「取消」没有对象可取消（取消=把表单收起来，
+   下一眼又不知道该去哪儿找入口），所以只留「发送」。 */
+body[data-page="post"] #cbarCancel { display: none; }
+/* 评论列表与评论表单断开、间隔 16px：原先 .cbar 靠一条 border-top 直接贴在 .cmt-list 下面，
+   两块灰底（.acts 与表单）连成一片，看上去像同一栏，容易误以为表单也是评论之一。 */
+body[data-page="post"] .cbar.show { margin-top: 16px; border-top: 0; }
+/* 详情页封面下方的返回行：两个动作一行并排，中间隔 16px。
+   返回上一页是 button（走 history.back()），返回朋友圈是 <a href="/">（真链接，爬虫走得通）。 */
+.back-home { display: flex; align-items: center; justify-content: center; gap: 16px; padding: 12px 16px 0; }
 .back-home[hidden] { display: none; }
-.back-home a { color: var(--wx-blue); font-size: 14px; }
-.back-home a:hover { color: var(--wx-blue-deep); text-decoration: underline; }
+.back-home a, .back-home button {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  color: var(--wx-blue); font-size: 14px; font-family: inherit; line-height: 1.4;
+}
+.back-home a:hover, .back-home button:hover { color: var(--wx-blue-deep); text-decoration: underline; }
 
 /* ============ 大图查看器 ============ */
 .viewer {
@@ -553,7 +566,8 @@ body[data-page="post"] .pager { display: none; }
    字号统一按 +2px 阶梯走，保持朋友圈原有的层级关系不被打乱。 */
 @media (max-width: 480px) {
   .post { padding: 18px 14px; }
-  .p-text { font-size: 16px; }
+  /* 正文字号改走 token：这样「阅读全文」会一起跟上，不用在下面再抄一份 16px */
+  :root { --p-text-size: 16px; }
   .p-name { font-size: 15px; }
   .acts { font-size: 15px; }
   .p-time, .p-location { font-size: 13px; }

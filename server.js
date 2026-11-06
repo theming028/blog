@@ -15,6 +15,7 @@ const { migrateSnapshotToCloud } = require('./lib/migrate');
 const { screenComment } = require('./lib/spam');
 const visit = require('./lib/visit');
 const seo = require('./lib/seo');
+const push = require('./lib/push');
 // 帖子/评论的 HTML 生成函数：浏览器（public/js/feed.js）与服务端 SSR 共用这一份，
 // 保证"爬虫拿到的 HTML"与"用户看到的 DOM"不可能分叉（分叉就是 cloaking，百度直接 K 站）
 const Render = require('./public/js/render.js');
@@ -427,6 +428,18 @@ function ssrCtx(settings, detail) {
   };
 }
 
+/* 百度主动推送的目标地址：发帖/改帖/删帖后顺带推一次，收录延迟从"天"降到"分钟"。
+   base 一律取推送配置里登记的 site，而不是本次请求的域名——百度校验的正是
+   "site 与 URL 同源"，用 www 登记的站点却推 apex 地址，会被判成不匹配而丢弃。
+   没配置时退回本次请求的域名（本地预览会判成内网返回空，那就干脆不推）。
+   首页每次都带上：信息流变了，入口页权重最高，比只推详情页划算。 */
+function pushTargets(req, ids) {
+  const cfg = push.loadConfig(DATA_DIR);
+  const base = (cfg && cfg.site) || seo.siteBase(req) || '';
+  if (!base) return [];
+  return (ids || []).map((id) => `${base}/p/${encodeURIComponent(id)}`).concat([`${base}/`]);
+}
+
 async function ssrForPage(req, kind, postId) {
   const settings = publicCache || DEFAULT_SETTINGS;
   const base = seo.siteBase(req);
@@ -724,6 +737,8 @@ async function handleApi(req, res, pathname, query) {
       media: media.list,
       status: b.status === 'draft' ? 'draft' : 'published',
     });
+    // 草稿不推：推一个会 404 的地址进百度，等于主动送一条死链过去
+    if (post.status === 'published') push.pushAsync(DATA_DIR, pushTargets(req, [post.id]), '发帖');
     return sendJson(res, 200, { post, warning: store.mediaWarning });
   }
 
@@ -759,12 +774,16 @@ async function handleApi(req, res, pathname, query) {
     if (b.status !== undefined) patch.status = b.status === 'draft' ? 'draft' : 'published';
     const post = await store.updatePost(m[1], patch);
     if (!post) return sendError(res, 404, 'post not found');
+    // 改帖顺带推送：正文/图片变了，百度需要重新抓一次；转成草稿就只推首页
+    push.pushAsync(DATA_DIR, pushTargets(req, post.status === 'published' ? [post.id] : []), '改帖');
     return sendJson(res, 200, { post, warning: store.mediaWarning });
   }
   if (m && method === 'DELETE') {
     const post = await store.getPost(m[1]);
     if (!post) return sendError(res, 404, 'post not found');
     await store.deletePost(m[1]);
+    // 删帖不推那条 URL（推了等于催它去抓一个已 404 的地址）；只推首页，让列表页的新旧差异被看到
+    push.pushAsync(DATA_DIR, pushTargets(req, []), '删帖');
     return sendJson(res, 200, { ok: true });
   }
 

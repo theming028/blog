@@ -729,6 +729,14 @@ async function loadPosts(page) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+/* 详情页封面下方的「返回上一页」：优先走浏览器历史（用户从哪儿来就回哪儿去，
+   也符合微信里"返回"的直觉）；没有历史可退时（直接搜进详情页、新开标签、刷新后
+   history.length 仍可能为 1）退回首页，绝不能点了没反应。 */
+$('#backPrevBtn').addEventListener('click', () => {
+  if (history.length > 1) history.back();
+  else location.href = '/';
+});
+
 $('#pager').addEventListener('click', (e) => {
   const btn = e.target.closest('[data-page]');
   if (!btn || btn.classList.contains('disabled')) return;
@@ -812,14 +820,15 @@ function bootData() {
   } catch (e) { return null; }
 }
 
-/* SSR 失败时的兜底：详情页自己去把这一条捞回来。
-   没有 GET /api/posts/:id 这个接口，就取前 50 条里找——个人博客的量级够用。
-   找不到就明确提示，绝不悄悄渲染整个信息流：那会让每个详情页都变成重复内容。 */
+/* SSR 失败时的兜底：详情页自己去把这一条捞回来（服务端有 GET /api/posts/:id，
+   它顺带把 likes 与可见评论都配好，还兜着"草稿对访客 404"那道判断——
+   自己拉 50 条再 find 既多传数据又绕过了草稿判断，别那么写）。
+   拿不到就明确提示，绝不悄悄渲染整个信息流：那会让每个详情页都变成重复内容。 */
 async function loadDetail(id) {
   state.detail = id;
   try {
-    const r = await api('/api/posts?page=1&limit=50');
-    const p = r.posts.find((x) => x.id === id);
+    const r = await api('/api/posts/' + encodeURIComponent(id));
+    const p = r.post;
     if (!p) { $('#feed').innerHTML = '<div class="loading">这条内容不存在或已下架。<a href="/">回到首页</a></div>'; return; }
     state.posts = [p]; state.page = 1; state.pages = 1; state.total = 1;
     await loadSettings();
@@ -827,7 +836,11 @@ async function loadDetail(id) {
     renderPager();
     openCbar(id, null, null, { focus: false });
   } catch (e) {
-    $('#feed').innerHTML = `<div class="loading">加载失败：${esc(e.message)}</div>`;
+    // 草稿/已删除/不存在的 id 都是 404 + "post not found"，给一句人话而不是抛错误码
+    const gone = /not found/i.test(e.message);
+    $('#feed').innerHTML = gone
+      ? '<div class="loading">这条内容不存在或已下架。<a href="/">回到首页</a></div>'
+      : `<div class="loading">加载失败：${esc(e.message)}</div>`;
   }
 }
 
