@@ -350,6 +350,17 @@ video.p-media-el { aspect-ratio: 16 / 10; object-fit: contain; }
 .pager .pg-arrow.disabled { color: #C9C9C9; pointer-events: none; }
 .pager .pg-num:hover:not(.cur) { background: #F2F2F2; }
 
+/* 详情页 /p/<id>：复用首页的壳，但封面大图和分页条属于"信息流"，
+   留在单页里就成了"封面 + 同一条内容再来一遍"，也稀释了这一页的主题。 */
+body[data-page="post"] .cover,
+body[data-page="post"] .pager { display: none; }
+/* 返回链接由服务端在 data-page=post 时点亮（hidden 属性被摘掉）。
+   它同时是一条站内链接：详情页要能被爬进首页权重池，不能是孤岛。 */
+.back-home { text-align: center; padding: 14px 0 0; }
+.back-home[hidden] { display: none; }
+.back-home a { color: var(--wx-blue); font-size: 14px; }
+.back-home a:hover { color: var(--wx-blue-deep); text-decoration: underline; }
+
 /* ============ 大图查看器 ============ */
 .viewer {
   position: fixed; inset: 0; background: rgba(0, 0, 0, .82); z-index: 300;

@@ -14,6 +14,10 @@ const { seedIfEmpty } = require('./lib/seed');
 const { migrateSnapshotToCloud } = require('./lib/migrate');
 const { screenComment } = require('./lib/spam');
 const visit = require('./lib/visit');
+const seo = require('./lib/seo');
+// 帖子/评论的 HTML 生成函数：浏览器（public/js/feed.js）与服务端 SSR 共用这一份，
+// 保证"爬虫拿到的 HTML"与"用户看到的 DOM"不可能分叉（分叉就是 cloaking，百度直接 K 站）
+const Render = require('./public/js/render.js');
 
 const COMMENT_MAX = 200; // 评论字数上限
 const POST_MAX = 5000;   // 正文长度上限，与发布页 textarea 的 maxlength 对齐
@@ -306,6 +310,10 @@ function sendJson(res, code, obj) {
   res.writeHead(code, {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
+    /* API 的 JSON 不该进索引，但不能靠 robots.txt 拦——帖子图片走 /api/images/<id>，
+       Disallow: /api/ 会把图片一起关掉，而旅行摄影站一半流量本该来自图片搜索。
+       所以这里用响应头精确处理：JSON 不索引，图片照常。 */
+    'X-Robots-Tag': 'noindex, nofollow',
     ...SECURITY_HEADERS,
   });
   res.end(body);
@@ -378,6 +386,108 @@ const IMG_FONT_EXT = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.svg',
 const RANGE_RE = /^\s*bytes\s*=\s*(\d*)\s*-\s*(\d*)\s*$/i;
 
 /** 给 HTML 里的 /js/*、/css/* 引用补版本号，并替封面/头像把 src 提前写进文档 */
+/* ---------- 信息流数据组装：/api/posts 与 SSR 共用这一份 ----------
+ * 分成两处各写一遍迟早会分叉：SSR 少带一个 likes、或评论可见性口径不同，
+ * 爬虫看到的就和用户看到的不一样——那既是 bug 也是 cloaking。 */
+async function feedData(includeDrafts, page, pageSize) {
+  const posts = await store.listPosts(includeDrafts);
+  const [likes, comments] = await Promise.all([store.allLikes(), store.allComments()]);
+  for (const p of posts) {
+    p.likes = likes.filter((l) => l.post_id === p.id);
+    // 前台仅展示 visible 评论；后台草稿列表返回全部评论（含待审/屏蔽）以便计数与审核
+    p.comments = comments.filter((c) => c.post_id === p.id && (includeDrafts || c.status === 'visible'));
+  }
+  if (includeDrafts) return { posts };
+  const size = Math.min(50, Math.max(1, pageSize || 10));
+  const total = posts.length;
+  const pages = Math.max(1, Math.ceil(total / size));
+  const cur = Math.min(Math.max(1, page || 1), pages);
+  const start = (cur - 1) * size;
+  return { posts: posts.slice(start, start + size), total, page: cur, pageSize: size, pages };
+}
+
+/* ---------- SSR：把公开内容直接写进 HTML ----------
+ * 不做这件事，爬虫拿到的首页只有一个 <title> 和空的 #feed：Google 会执行 JS 但排队慢、
+ * 常常超时，百度/搜狗/神马基本不执行。对一个新备案的站点，等于整站在搜索里不存在。
+ * 三条硬约束：
+ *  1) HTML 由 public/js/render.js 生成，和浏览器同一份，绝不服务端另写一套；
+ *  2) 任何一步异常都退回原样 HTML——SSR 是增益，不能变成故障源；
+ *  3) 拿不到可信的绝对域名时不输出 canonical/og:url（错的 canonical 比缺失更难发现）。 */
+const SITE_NAME = '朝夕光年';
+const FEED_PAGE_SIZE = 10;   // 与 feed.js 首屏请求的 limit 一致，SSR 与客户端才会是同一页
+
+function ssrCtx(settings) {
+  return {
+    nickname: settings.nickname,
+    avatar: settings.avatar,
+    clientKey: '',      // 服务端不知道"我是谁"，"我赞过"的高亮由客户端水合后补
+    expanded: [],       // 折叠展开态是访问者会话状态，SSR 一律按折叠输出
+    nowMs: Date.now(),
+  };
+}
+
+async function ssrForPage(req, kind, postId) {
+  const settings = publicCache || DEFAULT_SETTINGS;
+  const base = seo.siteBase(req);
+  const ctx = ssrCtx(settings);
+  const coverImg = base && settings.cover ? `${base}${settings.cover}` : '';
+
+  if (kind === 'post') {
+    const post = await store.getPost(postId);
+    if (!post || post.status !== 'published') return null;
+    const [likes, comments] = await Promise.all([store.allLikes(), store.allComments()]);
+    post.likes = likes.filter((l) => l.post_id === post.id);
+    post.comments = comments.filter((c) => c.post_id === post.id && c.status === 'visible');
+    const imgs = (post.images || []).map((id) => `${base || ''}/api/images/${encodeURIComponent(id)}`);
+    const titleText = `${seo.postTitle(post)} · ${SITE_NAME}`;
+    const desc = seo.excerpt(post.content || (post.location ? `拍摄于 ${post.location}` : ''), 140)
+      || `${SITE_NAME} · ${settings.nickname || ''} 的一张照片`;
+    return {
+      kind, titleText,
+      feed: Render.feedHTML([post], ctx),
+      bootData: { posts: [post], total: 1, page: 1, pageSize: 1, pages: 1, settings, detail: post.id },
+      head: seo.headBlock({
+        title: titleText, siteName: SITE_NAME, description: desc, type: 'article',
+        canonical: base ? `${base}/p/${encodeURIComponent(post.id)}` : '',
+        image: (base && (post.images || []).length) ? imgs[0] : coverImg,
+        publishedTime: post.created_at ? new Date(post.created_at).toISOString() : '',
+        jsonLd: base ? seo.postJsonLd({ base, siteName: SITE_NAME, post, avatar: settings.avatar, nickname: settings.nickname }) : [],
+      }),
+    };
+  }
+
+  const d = await feedData(false, 1, FEED_PAGE_SIZE);
+  const titleText = settings.nickname ? `${SITE_NAME} · ${settings.nickname}的光影年华` : SITE_NAME;
+  const desc = [settings.sign, d.posts.length ? seo.excerpt(d.posts[0].content, 80) : '']
+    .filter(Boolean).join(' —— ') || `${SITE_NAME}：旅行摄影与路上的瞬间`;
+  return {
+    kind: 'home', titleText,
+    feed: Render.feedHTML(d.posts, ctx),
+    bootData: Object.assign({}, d, { settings, detail: null }),
+    head: seo.headBlock({
+      title: titleText, siteName: SITE_NAME, description: desc, type: 'website',
+      canonical: base ? `${base}/` : '', image: coverImg,
+      jsonLd: base ? seo.homeJsonLd({ base, siteName: SITE_NAME, description: desc, posts: d.posts, limit: FEED_PAGE_SIZE }) : [],
+    }),
+  };
+}
+
+/* 把 SSR 产物塞进模板。只认 index.html 里那三处显式标记，模板文案改了也不会误伤。
+   替换一律用回调形式：帖子正文里出现 "$&" 这类字符时，字符串替换会把它们当特殊模式展开。 */
+function applySsr(html, ssr) {
+  if (!ssr) return html;
+  html = html.replace(/<title>[\s\S]*?<\/title>/, () => `<title>${Render.esc(ssr.titleText)}</title>`);
+  html = html.replace('<!--SSR:HEAD-->', () => ssr.head);
+  html = html.replace(/<!--SSR:FEED:BEGIN-->[\s\S]*?<!--SSR:FEED:END-->/, () => ssr.feed);
+  html = html.replace('<!--SSR:BOOT-->', () => `<script type="application/json" id="boot-data">${seo.jsonSafe(JSON.stringify(ssr.bootData))}</script>`);
+  if (ssr.kind === 'post') {
+    html = html.replace('<body data-page="feed">', '<body data-page="post">');
+    // 点亮返回链接：详情页既是入口也是出口，站内链接闭环要靠它
+    html = html.replace('<div class="back-home" id="backHome" hidden>', '<div class="back-home" id="backHome">');
+  }
+  return html;
+}
+
 function transformHtml(html) {
   html = html.replace(/((?:href|src)=")(\/(?:js|css)\/[^"?]+)(")/g, (m, pre, p, post) => {
     const full = path.normalize(path.join(PUBLIC_DIR, p.slice(1)));
@@ -409,10 +519,14 @@ function cachePolicy(ext, url) {
   return 'public, max-age=300';
 }
 
-function sendHtml(req, res, filePath, st) {
+async function sendHtml(req, res, filePath, st, ssr) {
   let html;
   try { html = fs.readFileSync(filePath, 'utf8'); } catch (e) { res.writeHead(404); return res.end('Not Found'); }
-  const body = Buffer.from(transformHtml(html), 'utf8');
+  // SSR 失败绝不能连页面一起带崩：退回不带 SSR 的原样 HTML，浏览器照样能渲染（只是爬虫看不到内容）
+  let out;
+  try { out = applySsr(transformHtml(html), ssr || null); }
+  catch (e) { console.error('[ssr] 注入失败，退回客户端渲染:', e.message); out = transformHtml(html); }
+  const body = Buffer.from(out, 'utf8');
   // ETag 必须按改写后的正文算：换了封面而文件 mtime 没变时，用文件指纹会让客户端继续拿旧页
   const etag = `W/"${crypto.createHash('sha1').update(body).digest('hex').slice(0, 16)}"`;
   const incs = req.headers['if-none-match'];
@@ -423,11 +537,11 @@ function sendHtml(req, res, filePath, st) {
   res.end(body);
 }
 
-function serveStatic(req, res, filePath) {
+async function serveStatic(req, res, filePath, ssr) {
   let st;
   try { st = fs.statSync(filePath); } catch (e) { res.writeHead(404); return res.end('Not Found'); }
   const ext = path.extname(filePath).toLowerCase();
-  if (ext === '.html') return sendHtml(req, res, filePath, st);
+  if (ext === '.html') return sendHtml(req, res, filePath, st, ssr);
   const mime = MIME[ext] || 'application/octet-stream';
   const mtimeMs = Math.floor(st.mtimeMs);
   const etag = `W/"${st.size.toString(16)}-${mtimeMs.toString(16)}"`;
@@ -590,22 +704,7 @@ async function handleApi(req, res, pathname, query) {
 
   if (pathname === '/api/posts' && method === 'GET') {
     const includeDrafts = query.get('drafts') === '1';
-    const posts = await store.listPosts(includeDrafts);
-    const [likes, comments] = await Promise.all([store.allLikes(), store.allComments()]);
-    for (const p of posts) {
-      p.likes = likes.filter((l) => l.post_id === p.id);
-      // 前台仅展示 visible 评论；后台草稿列表返回全部评论（含待审/屏蔽）以便计数与审核
-      p.comments = comments.filter((c) => c.post_id === p.id && (includeDrafts || c.status === 'visible'));
-    }
-    // 后台草稿列表返回全量；前台信息流按页返回（默认每页 10 条）
-    if (includeDrafts) return sendJson(res, 200, { posts });
-    const pageSize = Math.min(50, Math.max(1, parseInt(query.get('limit'), 10) || 10));
-    const total = posts.length;
-    const pages = Math.max(1, Math.ceil(total / pageSize));
-    let page = parseInt(query.get('page'), 10) || 1;
-    page = Math.min(Math.max(1, page), pages);
-    const start = (page - 1) * pageSize;
-    return sendJson(res, 200, { posts: posts.slice(start, start + pageSize), total, page, pageSize, pages });
+    return sendJson(res, 200, await feedData(includeDrafts, parseInt(query.get('page'), 10) || 1, parseInt(query.get('limit'), 10) || 10));
   }
 
   if (pathname === '/api/posts' && method === 'POST') {
@@ -964,6 +1063,35 @@ const server = http.createServer(async (req, res) => {
     return res.end();
   }
 
+  /* ---------- 爬虫入口三件套：robots.txt / sitemap.xml / 帖子详情页 ----------
+   * 都要放在静态之前：/robots.txt 会被当成 public 下不存在的文件而 404。 */
+  if (pathname === '/robots.txt') {
+    const base = seo.siteBase(req);
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=3600', ...SECURITY_HEADERS });
+    return res.end(seo.robotsTxt(base));
+  }
+
+  if (pathname === '/sitemap.xml') {
+    const base = seo.siteBase(req);
+    if (!base) {
+      // 拿不到可信域名就不给 sitemap：loc 写成相对路径或内网域名，等于给爬虫一张错地图
+      res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8', ...SECURITY_HEADERS });
+      return res.end('Sitemap unavailable');
+    }
+    // 这里只要 id 与时间，不需要点赞/评论，所以直接走 listPosts，也不受 feedData 每页 50 的上限约束
+    const posts = await store.listPosts(false);
+    const iso = (t) => (t ? new Date(t).toISOString().replace(/\.\d{3}Z$/, 'Z') : '');
+    const entries = [{ loc: `${base}/`, lastmod: iso(posts[0] && posts[0].created_at), priority: '1.0' }];
+    for (const p of posts) entries.push({ loc: `${base}/p/${encodeURIComponent(p.id)}`, lastmod: iso(p.created_at), priority: '0.7' });
+    // 小游戏由 Nginx 直接发、不在本应用里；只有这台机器真的装了它才进 sitemap，
+    // 否则本地与 QW Pages 会给出一个 404 条目。
+    if (fs.existsSync('/var/www/games/submarine/index.html')) entries.push({ loc: `${base}/submarine/`, priority: '0.6' });
+    res.writeHead(200, { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'no-cache', ...SECURITY_HEADERS });
+    return res.end(seo.sitemapXml(entries));
+  }
+
+  const detail = /^\/p\/([\w-]+)\/?$/.exec(pathname);
+
   // 静态资源
   let file = pathname === '/' ? '/index.html' : pathname;
   if (pathname === '/admin') file = '/admin.html';
@@ -974,12 +1102,34 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(302, { Location: '/login', ...SECURITY_HEADERS });
     return res.end();
   }
+
+  /* SSR：首页与帖子详情页把内容直接渲染进 HTML。
+     失败就退回客户端渲染（页面照常能用，只是爬虫拿不到正文），绝不把故障扩大成 500。 */
+  let ssr = null, ssrFailed = false;
+  try {
+    if (pathname === '/' || pathname === '/index.html') ssr = await ssrForPage(req, 'home');
+    else if (detail) ssr = await ssrForPage(req, 'post', detail[1]);
+  } catch (e) {
+    console.error('[ssr] 数据读取失败，本页退回客户端渲染:', e.message);
+    ssrFailed = true;
+  }
+  if (detail) {
+    if (!ssr) {
+      // 草稿、已删除、不存在的 id 都到这里：给真 404，别给"能打开但内容为空"的页面（会积累垃圾索引）
+      res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache', ...SECURITY_HEADERS });
+      return res.end(ssrFailed
+        ? '<!doctype html><meta charset="utf-8"><title>暂时无法访问</title><p>服务暂时不可用，请稍后重试。</p>'
+        : '<!doctype html><meta charset="utf-8"><title>内容不存在</title><p>这条内容不存在或已下架。<a href="/">回到首页</a>');
+    }
+    file = '/index.html';   // 详情页复用同一个壳，靠 SSR 与 body[data-page] 区分
+  }
+
   const full = path.normalize(path.join(PUBLIC_DIR, file));
   // 必须带分隔符比较：只写 startsWith(PUBLIC_DIR) 时，同级 public_backup/ 这类
   // "名字以 public 开头"的目录会被判为合法而读出去。
   const inside = full === PUBLIC_DIR || full.startsWith(PUBLIC_DIR + path.sep);
   if (!inside) { res.writeHead(403, SECURITY_HEADERS); return res.end('Forbidden'); }
-  if (fs.existsSync(full) && fs.statSync(full).isFile()) return serveStatic(req, res, full);
+  if (fs.existsSync(full) && fs.statSync(full).isFile()) return serveStatic(req, res, full, ssr);
   res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', ...SECURITY_HEADERS });
   res.end('Not Found');
 });

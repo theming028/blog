@@ -4,11 +4,8 @@
 const $ = (sel, root) => (root || document).querySelector(sel);
 const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
 
-function esc(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[c]));
-}
+/* esc / fmtTime 已搬到 render.js（与 SSR 共用一份渲染层，转义与时间格式必须同源）。
+   那两个函数由 render.js 挂到全局，所以 render.js 必须排在本文件之前加载。 */
 
 async function api(path, opts = {}) {
   const res = await fetch(path, {
@@ -19,23 +16,6 @@ async function api(path, opts = {}) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `请求失败(${res.status})`);
   return data;
-}
-
-/* 微信朋友圈时间：刚刚 / N分钟前 / N小时前 / 昨天 / 前天 / M月D日 / YYYY年M月D日 */
-function fmtTime(iso) {
-  const d = new Date(iso);
-  if (isNaN(d)) return '';
-  const now = new Date();
-  const diff = (now - d) / 1000;
-  if (diff < 60) return '刚刚';
-  if (diff < 3600) return `${Math.floor(diff / 60)}分钟前`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}小时前`;
-  const startOfDay = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const days = Math.floor((startOfDay(now) - startOfDay(d)) / 86400000);
-  if (days === 1) return '昨天';
-  if (days === 2) return '前天';
-  if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}月${d.getDate()}日`;
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
 }
 
 /* 访客身份 */

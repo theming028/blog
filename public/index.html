@@ -10,8 +10,9 @@
      素材与几何说明见 /css/garden-bg.css 头注与 README。 -->
 <link rel="stylesheet" href="/css/garden-bg.css">
 <link rel="stylesheet" href="/css/player.css">
+<!--SSR:HEAD-->
 </head>
-<body>
+<body data-page="feed">
 <!-- 花园必须排在 .phone 之前：两者都是定位元素、按 DOM 顺序绘制，靠后的 .phone 才能压住它 -->
 <div id="garden-bg" aria-hidden="true">
   <div class="g-scene">
@@ -51,10 +52,11 @@
     </div>
   </div>
 
+  <!-- 详情页的返回链接：默认 hidden，服务端渲染 /p/<id> 时才摘掉标记。
+       它同时是详情页指回首页的站内链接，不能省。 -->
+  <div class="back-home" id="backHome" hidden><a href="/">‹ 返回朋友圈</a></div>
   <!-- 信息流 -->
-  <div class="feed" id="feed">
-    <div class="loading">加载中…</div>
-  </div>
+  <div class="feed" id="feed"><!--SSR:FEED:BEGIN--><div class="loading">加载中…</div><!--SSR:FEED:END--></div>
   <!-- 分页页码 -->
   <div class="pager" id="pager" style="display:none"></div>
 
@@ -133,6 +135,7 @@
   </div>
 </div>
 
+<script src="/js/render.js"></script>
 <script src="/js/common.js"></script>
 <!-- track.js 夹在 common 与 feed 之间：它要覆写 common.js 的全局 api()，
      而 feed.js 一加载就会发起请求，晚一步装钩子就漏掉首屏那几次动作。 -->
@@ -141,6 +144,7 @@
 <script src="/js/snow.js"></script>
 <script src="/js/blossom.js"></script>
 <script src="/js/player.js"></script>
+<!--SSR:BOOT-->
 <script src="/js/feed.js"></script>
 </body>
 </html>

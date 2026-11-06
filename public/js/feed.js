@@ -1,8 +1,10 @@
-/* 朋友圈信息流：渲染、点赞、评论、回复、大图查看 */
+/* 朋友圈信息流：点赞、评论、回复、大图查看等交互编排。
+   帖子与评论的 HTML 不在这里拼——那份字符串在 public/js/render.js，
+   服务端 SSR 与本文件用的是同一个函数，避免"爬虫看到的"和"用户看到的"分叉。 */
 'use strict';
 
-const COMMENT_MAX = 200; // 与 server.js 的同名常量保持一致（输入框 maxlength 亦为此值）
-const CMT_CLAMP_AT = 80; // 评论超过此字数先折叠；按码点计数，避免切碎 emoji 造成乱码
+// 常量与工具全部来自 render.js（唯一真源），这里只保留别名，方便本文件读起来短
+const { COMMENT_MAX, CMT_CLAMP_AT, esc, fmtTime, imgUrl } = Render;
 
 const state = {
   posts: [],
@@ -18,13 +20,7 @@ const state = {
   settings: {}, // 默认值只在 server.js 一处维护，前端等 /api/settings 下发，避免多副本漂移
 };
 
-const ICON_HEART = '<svg viewBox="0 0 24 24"><path d="M12 21s-7.5-4.7-10-9.3C.5 8.6 2.4 5 5.8 5c2 0 3.4 1 4.2 2.4h4c.8-1.4 2.2-2.4 4.2-2.4 3.4 0 5.3 3.6 3.8 6.7C19.5 16.3 12 21 12 21z"/></svg>';
-const ICON_LIKE_SM = '<svg viewBox="0 0 24 24"><path d="M12 21.3C10.6 20.2 2.5 14.6 2.5 8.9 2.5 5.6 5 3.5 7.6 3.5c1.8 0 3.4.9 4.4 2.4 1-1.5 2.6-2.4 4.4-2.4 2.6 0 5.1 2.1 5.1 5.4 0 5.7-8.1 11.3-9.5 12.4z"/></svg>';
-const ICON_CMT = '<svg viewBox="0 0 24 24"><path d="M12 3C6.5 3 2 6.9 2 11.7c0 2.7 1.4 5.1 3.7 6.7-.2 1-.8 2.2-1.6 3 1.7-.2 3.3-.9 4.4-1.7 1.1.3 2.3.5 3.5.5 5.5 0 10-3.9 10-8.5S17.5 3 12 3z"/></svg>';
-const ICON_PIN = '<svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>';
-const ICON_IMG = '<svg viewBox="0 0 24 24"><path d="M21 3H3a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h18a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1zM8.5 9A1.5 1.5 0 1 1 7 10.5A1.5 1.5 0 0 1 8.5 9zM5 18l4.5-6 3 4 2.5-3 4 5z"/></svg>';
-
-const imgUrl = (id) => `/api/images/${encodeURIComponent(id)}`;
+const { ICON_HEART, ICON_LIKE_SM, ICON_CMT, ICON_PIN, ICON_IMG } = Render;
 
 /* 特效调度：只认三个合法值，其它一律按默认飘雪处理 */
 function applyFx(mode) {
@@ -83,122 +79,28 @@ document.addEventListener('play', (e) => {
 }, true);
 
 /* ---------- 渲染 ---------- */
+/* 帖子与评论的 HTML 全部出自 render.js——服务端 SSR 调的是同一个函数，
+   这样"爬虫看到的 HTML"和"用户看到的 DOM"不可能分叉。本文件只负责把
+   只有浏览器知道的状态（我是谁、哪条长评论已展开、当前时间）打包成 ctx 递过去。 */
+function renderCtx() {
+  return {
+    nickname: state.settings.nickname,
+    avatar: state.settings.avatar,
+    clientKey: getClientKey(),
+    expanded: state.cmtExpanded,
+    nowMs: Date.now(),
+  };
+}
+const renderPost = (p) => Render.renderPost(p, renderCtx());
+const renderComment = (c) => Render.renderComment(c, renderCtx());
+const cmtPrefix = (c) => Render.cmtPrefix(c);
+const cmtFolded = (c) => Render.cmtFolded(c);
+
 function renderFeed() {
   const feed = $('#feed');
   releaseMedia(feed);          // 旧节点交还给 IO 并停下，别让上一页的视频继续在后台出声
-  if (!state.posts.length) {
-    feed.innerHTML = '<div class="loading">还没有内容，点右上角相机发布第一条吧</div>';
-    return;
-  }
-  feed.innerHTML = state.posts.map(renderPost).join('');
+  feed.innerHTML = Render.feedHTML(state.posts, renderCtx());
   observeMedia();
-}
-
-function renderPost(p) {
-  const clientKey = getClientKey();
-  const liked = p.likes.some((l) => l.client_key === clientKey);
-  // 头像未就绪时不写 src：src="" 会让浏览器再去请求当前页面 URL
-  const avAttr = state.settings.avatar ? ` src="${esc(state.settings.avatar)}"` : '';
-
-  let imgHtml = '';
-  if (p.images.length === 1) {
-    imgHtml = `<div class="p-single"><img src="${imgUrl(p.images[0])}" data-pid="${p.id}" data-idx="0" loading="lazy" decoding="async" alt=""></div>`;
-  } else if (p.images.length > 1) {
-    // 2 张与 4 张走两列：三列布局下 2 张只占容器 2/3 宽，两列才与单图（.p-single 撑满）同宽
-    const twoUp = p.images.length === 2 || p.images.length === 4;
-    const cls = twoUp ? 'p-grid cols-2' : 'p-grid';
-    imgHtml = `<div class="${cls}">` + p.images.map((im, i) =>
-      `<img src="${imgUrl(im)}" data-pid="${p.id}" data-idx="${i}" loading="lazy" decoding="async" alt="">`).join('') + '</div>';
-  }
-
-  const locHtml = p.location
-    ? `<div class="p-location">${ICON_PIN}${esc(p.location)}</div>` : '';
-
-  /* 音视频：只播外链（本站不托管媒体文件），一条内容最多 3 段，排在图片之后。
-     - video 用 preload="none"：列表里刷过去时一个字节都不下，点开才取流；
-     - audio 用 preload="metadata"：它没有画面，进度条与时长要靠文件头才画得出来，
-       这只请求头部几 KB，不是整段；
-     - playsinline 是 iOS 必需，少了它一点播放就全屏接管；
-     - 自动播放刻意【不】写 autoplay 属性，改成 data-autoplay 交给下面的控制器：
-       属性版会在页面加载瞬间就把屏幕外的播放器一起点着（用户只听见声音不知道哪来的），
-       而且"先播再被 IntersectionObserver 暂停"是有竞态的。改成"进入视口才 play()"，
-       行为确定，也顺带满足浏览器策略——带声音的自动播放 Chrome/Safari 一律拦，
-       所以自动播放必须配 muted，编辑页里也照这句写。 */
-  const mediaHtml = (p.media || []).map((m) => {
-    if (!m || (m.kind !== 'video' && m.kind !== 'audio')) return '';
-    if (!/^https?:\/\//i.test(m.url || '')) return '';
-    if (m.kind === 'audio') {
-      /* 音频不给自动播放：能自动起播的必然被静音（浏览器策略），结果就是
-         "一条进度条在走、完全没声"的音频条，比不播更让人困惑。
-         编辑页里音频那一行的勾选框也是禁用 + 说明，两处口径一致。 */
-      return `<div class="p-audio"><audio class="p-media-el" controls preload="metadata" src="${esc(m.url)}">当前浏览器不支持音频播放。</audio></div>`;
-    }
-    const auto = m.autoplay ? ' data-autoplay="1" muted' : '';
-    const poster = m.poster ? ` poster="${esc(m.poster)}"` : '';
-    return `<video class="p-media-el" controls playsinline webkit-playsinline${poster} preload="none"${auto} src="${esc(m.url)}">当前浏览器不支持视频播放。</video>`;
-  }).join('');
-
-  const hasLikes = p.likes.length > 0;
-  const hasCmts = p.comments.length > 0;
-
-  // 点赞入口放在 .p-foot 里、··· 按钮左侧 8px：0 赞显示"♡ 点赞"，有赞显示实心蓝心+计数，我赞过标红
-  const likeInner = hasLikes
-    ? `<span class="like-count">${p.likes.length}</span>`
-    : '<span class="like-word">点赞</span>';
-  const likeCls = ['like-row', hasLikes ? 'num' : '', liked ? 'mine' : ''].filter(Boolean).join(' ');
-    // title 要跟随状态：气泡里那个"取消点赞"入口已删掉，红色实心心如何撤销必须能被看出来
-    const titleAttr = liked ? '已点赞，点击取消' : hasLikes ? '双击内容也可点赞' : '点赞';
-    const likeBtn = `<button type="button" class="${likeCls}" data-act="like" aria-pressed="${liked}" title="${titleAttr}">${ICON_LIKE_SM}${likeInner}</button>`;
-
-  // 点赞搬走后 .acts 回到"只有评论才渲染"，零互动帖子不再多一条灰盒
-  const actsHtml = hasCmts
-    ? `<div class="acts"><div class="cmt-list">` + p.comments.map((c) => renderComment(c)).join('') + '</div></div>'
-    : '';
-
-  return `
-  <div class="post" data-pid="${p.id}">
-    <img class="p-avatar"${avAttr} alt="">
-    <div class="p-body">
-      <span class="p-name">${esc(state.settings.nickname)}</span>
-      ${p.content ? `<div class="p-text">${esc(p.content)}</div>` : ''}
-      ${imgHtml}
-      ${mediaHtml}
-      ${locHtml}
-      <div class="p-foot">
-        <span class="p-time">${fmtTime(p.created_at)}</span>
-        ${likeBtn}
-        <div class="p-toggle" data-pid="${p.id}"><i></i><i></i></div>
-      </div>
-      ${actsHtml}
-    </div>
-  </div>`;
-}
-
-/* 评论前缀（昵称 + 回复对象），折叠切换时需要重拼，单独抽出 */
-function cmtPrefix(c) {
-  // 渲染端再兜一层：服务端已只收 http(s)，历史数据里可能还留着 javascript: 值
-  const site = /^https?:\/\//i.test(c.site || '') ? c.site : '';
-  const nameHtml = site
-    ? `<a class="nm nm-link" href="${esc(site)}" target="_blank" rel="noopener nofollow">${esc(c.name)}</a>`
-    : `<span class="nm">${esc(c.name)}</span>`;
-  const reply = c.reply_to_name ? ` 回复 <span class="rn">${esc(c.reply_to_name)}</span>` : '';
-  return `${nameHtml}${reply}：`;
-}
-
-/* 折叠放在渲染层做：按 Unicode 码点截取，正文与操作项才能同处一行 */
-function cmtFolded(c) {
-  const chars = Array.from(c.content);
-  return chars.length > CMT_CLAMP_AT ? chars.slice(0, CMT_CLAMP_AT).join('') : null;
-}
-
-function renderComment(c) {
-  const mine = c.client_key && c.client_key === getClientKey();
-  const folded = cmtFolded(c);
-  const expanded = state.cmtExpanded.has(c.id);
-  const body = `<span class="cmt-body">${cmtPrefix(c)}${esc(expanded || folded === null ? c.content : folded)}</span>`;
-  const more = folded === null ? '' : `<i class="cmt-more">${expanded ? '收起' : '…展开'}</i>`;
-  const ops = mine ? '<span class="cmt-ops"><i class="cmt-op" data-op="edit">编辑</i><i class="cmt-op danger" data-op="del">删除</i></span>' : '';
-  return `<div class="cmt${mine ? ' mine' : ''}" data-cid="${c.id}" data-cname="${esc(c.name)}">${body}${more}${ops}</div>`;
 }
 
 function refreshPost(pid) {
@@ -845,12 +747,10 @@ async function checkAdmin() {
  * 少一个调用点不等于要动接口；真要清接口时再一起清 lib/visit.js 与 visitors 表。 */
 
 /* ---------- 启动 ---------- */
-async function loadSettings() {
-  try {
-    const r = await api('/api/settings');
-    Object.assign(state.settings, r.settings);
-  } catch (e) { /* 用默认值兜底 */ }
-  const s = state.settings;
+/* 把一份 settings 应用到页面上。拆出来是因为 SSR 的首屏数据里已经带了 settings
+   （见 bootData 分支），再拉一次 /api/settings 就是白等一个来回；
+   两个入口共用这一个函数，才不会"从接口来的设置"和"从 HTML 来的设置"行为不一致。 */
+function applySettings(s) {
   // 只有拿到值才写 src：src="" 会让浏览器去请求当前页面本身
   if (s.cover) $('#coverImg').src = s.cover;
   if (s.avatar) $('#coverAvatar').src = s.avatar;
@@ -869,6 +769,14 @@ async function loadSettings() {
   $('#copyright').textContent = `© ${new Date().getFullYear()} ${s.nickname || ''} · 朝夕光年`;
 }
 
+async function loadSettings() {
+  try {
+    const r = await api('/api/settings');
+    Object.assign(state.settings, r.settings);
+  } catch (e) { /* 用默认值兜底 */ }
+  applySettings(state.settings);
+}
+
 /* ---------- 网上邻居（友情链接） ---------- */
 async function loadLinks() {
   try {
@@ -884,10 +792,37 @@ async function loadLinks() {
   } catch (e) { /* 无友链则不展示 */ }
 }
 
+/* SSR 塞在 HTML 里的首屏数据（见 server.js 的 applySsr）。
+   读它而不是再打两次接口：首屏少 /api/settings + /api/posts 两个来回（跨境链路上
+   每个就是几百毫秒），而且爬虫拿到的 HTML 与用户看到的 DOM 天然来自同一份数据。
+   解析失败一律当"没有 SSR"处理，退回原来的两次请求——增益不能变成故障源。 */
+function bootData() {
+  const el = document.getElementById('boot-data');
+  if (!el) return null;
+  try {
+    const d = JSON.parse(el.textContent);
+    return d && Array.isArray(d.posts) && d.settings ? d : null;
+  } catch (e) { return null; }
+}
+
 (async () => {
   buildEmojiPanel();
   checkAdmin();
   loadLinks();
+  const boot = bootData();
+  if (boot) {
+    Object.assign(state.settings, boot.settings);
+    applySettings(state.settings);
+    state.posts = boot.posts;
+    state.page = boot.page || 1;
+    state.pages = boot.pages || 1;
+    state.total = typeof boot.total === 'number' ? boot.total : boot.posts.length;
+    /* HTML 里已经是这份内容，这里用带 clientKey 的 ctx 重绘一次，只为补上
+       "我赞过"的红色高亮——服务端不知道你是谁，所以那份输出里没有。 */
+    renderFeed();
+    renderPager();
+    return;
+  }
   /* 设置与信息流互不依赖，原先 `await loadSettings()` 再 loadPosts 是白等一个来回；
      跨境链路上一个 RTT 约 400ms，并行掉它就是一次实打实的提前。
      两边各自兜底：设置取不到用默认值，只有帖子取不到才提示加载失败。 */
