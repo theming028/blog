@@ -17,6 +17,7 @@ const state = {
   editingCid: null,   // 正在编辑的评论 id
   tmpActs: null,      // 为「无点赞无评论」的帖子临时创建的 acts 容器，收起时移除
   page: 1, pages: 1, total: 0,   // 分页
+  detail: null,   // 详情页的帖子 id；非空即"单页模式"（图片一行一张、不显示阅读全文、直接摊开评论表单）
   settings: {}, // 默认值只在 server.js 一处维护，前端等 /api/settings 下发，避免多副本漂移
 };
 
@@ -89,6 +90,7 @@ function renderCtx() {
     clientKey: getClientKey(),
     expanded: state.cmtExpanded,
     nowMs: Date.now(),
+    detail: state.detail,      // 决定图片是宫格还是整行一张、以及要不要"阅读全文"
   };
 }
 const renderPost = (p) => Render.renderPost(p, renderCtx());
@@ -205,7 +207,7 @@ async function addLikeOnly(pid) {
 /* ---------- 双击点赞 + 爱心喷发 ---------- */
 /* video/audio 必须排除：一是原生双击会切全屏，我们的双击点赞会跟它抢；
    二是在播放器上"点赞"这个意图本来也不成立。 */
-const LIKE_EXCLUDE = 'a, button, input, textarea, .like-row, .cbar, .p-toggle, .pop, .cmt, .cmt-more, .p-single img, .p-grid img, .blogroll-item, .viewer, video, audio';
+const LIKE_EXCLUDE = 'a, button, input, textarea, .like-row, .cbar, .p-toggle, .pop, .cmt, .cmt-more, .p-single img, .p-grid img, .p-full img, .blogroll-item, .viewer, video, audio';
 const tapMemo = { pid: '', t: 0, x: 0, y: 0 };
 
 async function likeAt(postEl, origin) {
@@ -358,7 +360,11 @@ function autoGrowCbar() {
   el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden';
 }
 
-function openCbar(pid, replyTo, editTarget) {
+function openCbar(pid, replyTo, editTarget, opts) {
+  // opts.focus=false：详情页自动展开表单时用。只把表单摆出来，不抢焦点、不动键盘。
+  // 自动聚焦在详情页是有害的：进页面就弹键盘会把正文顶出屏幕，
+  // 而且 iOS 要求在用户手势里才允许聚焦，非手势的 focus 本来也常被忽略。
+  const noFocus = !!(opts && opts.focus === false);
   // 切到另一条朋友圈前，先清掉上一条临时补的 acts，避免留下空灰盒
   if (state.tmpActs) { state.tmpActs.remove(); state.tmpActs = null; }
   if (!mountCbar(pid)) return; // 目标帖子不在当前页 DOM 中，放弃弹出
@@ -383,6 +389,7 @@ function openCbar(pid, replyTo, editTarget) {
   hideEmoji();   // 气泡菜单里的「评论」会 stopPropagation 绕过外点兜底，这里保证换目标时面板必收
   $('#cbar').classList.add('show');
   autoGrowCbar();                    // 编辑模式下带出原文时要立刻撑到对应高度
+  if (noFocus) return;
   // focus 同步做：iOS 要求在用户手势的同一任务里，包进 setTimeout 可能导致键盘不弹
   const focusEl = getNick() ? input : $('#cName'); // 老访客直接进内容框，首次使用先停在昵称框
   focusEl.focus({ preventScroll: true });
@@ -527,7 +534,7 @@ document.addEventListener('click', async (e) => {
   if (!t.closest('.pop')) closePop();
 
   // 图片 → 查看大图
-  const img = t.closest('.p-grid img, .p-single img');
+  const img = t.closest('.p-grid img, .p-single img, .p-full img');
   if (img) {
     const p = state.posts.find((x) => x.id === img.dataset.pid);
     if (p) {
@@ -805,14 +812,36 @@ function bootData() {
   } catch (e) { return null; }
 }
 
+/* SSR 失败时的兜底：详情页自己去把这一条捞回来。
+   没有 GET /api/posts/:id 这个接口，就取前 50 条里找——个人博客的量级够用。
+   找不到就明确提示，绝不悄悄渲染整个信息流：那会让每个详情页都变成重复内容。 */
+async function loadDetail(id) {
+  state.detail = id;
+  try {
+    const r = await api('/api/posts?page=1&limit=50');
+    const p = r.posts.find((x) => x.id === id);
+    if (!p) { $('#feed').innerHTML = '<div class="loading">这条内容不存在或已下架。<a href="/">回到首页</a></div>'; return; }
+    state.posts = [p]; state.page = 1; state.pages = 1; state.total = 1;
+    await loadSettings();
+    renderFeed();
+    renderPager();
+    openCbar(id, null, null, { focus: false });
+  } catch (e) {
+    $('#feed').innerHTML = `<div class="loading">加载失败：${esc(e.message)}</div>`;
+  }
+}
+
 (async () => {
   buildEmojiPanel();
   checkAdmin();
   loadLinks();
+  // 详情页的 id 以 URL 为准：SSR 挂掉时 boot-data 里就没有，得靠它自己找回这一条
+  const detailPath = /^\/p\/([\w-]+)\/?$/.exec(location.pathname);
   const boot = bootData();
   if (boot) {
     Object.assign(state.settings, boot.settings);
     applySettings(state.settings);
+    state.detail = boot.detail || (detailPath ? detailPath[1] : null);
     state.posts = boot.posts;
     state.page = boot.page || 1;
     state.pages = boot.pages || 1;
@@ -821,8 +850,12 @@ function bootData() {
        "我赞过"的红色高亮——服务端不知道你是谁，所以那份输出里没有。 */
     renderFeed();
     renderPager();
+    // 详情页把评论表单直接摊开（不抢焦点、不弹键盘），少一次点击才有互动
+    if (state.detail) openCbar(state.detail, null, null, { focus: false });
     return;
   }
+  // SSR 没给出 boot-data 的详情页：单独捞这一条，不要退化成整页信息流
+  if (detailPath) { await loadDetail(detailPath[1]); return; }
   /* 设置与信息流互不依赖，原先 `await loadSettings()` 再 loadPosts 是白等一个来回；
      跨境链路上一个 RTT 约 400ms，并行掉它就是一次实打实的提前。
      两边各自兜底：设置取不到用默认值，只有帖子取不到才提示加载失败。 */

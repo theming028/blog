@@ -42,6 +42,7 @@ const imgUrl = (id) => `/api/images/${encodeURIComponent(id)}`;
 
 const COMMENT_MAX = 200;   // 与 server.js 的同名常量保持一致（输入框 maxlength 亦为此值）
 const CMT_CLAMP_AT = 80;   // 评论超过此字数先折叠；按码点计数，避免切碎 emoji 造成乱码
+const IMGS_MAX = 9;        // 信息流宫格的显示上限（数据层同样截在 9 张，这里只管显示）
 
 const ICON_HEART = '<svg viewBox="0 0 24 24"><path d="M12 21s-7.5-4.7-10-9.3C.5 8.6 2.4 5 5.8 5c2 0 3.4 1 4.2 2.4h4c.8-1.4 2.2-2.4 4.2-2.4 3.4 0 5.3 3.6 3.8 6.7C19.5 16.3 12 21 12 21z"/></svg>';
 const ICON_LIKE_SM = '<svg viewBox="0 0 24 24"><path d="M12 21.3C10.6 20.2 2.5 14.6 2.5 8.9 2.5 5.6 5 3.5 7.6 3.5c1.8 0 3.4.9 4.4 2.4 1-1.5 2.6-2.4 4.4-2.4 2.6 0 5.1 2.1 5.1 5.4 0 5.7-8.1 11.3-9.5 12.4z"/></svg>';
@@ -79,7 +80,8 @@ function renderComment(c, ctx) {
   return `<div class="cmt${mine ? ' mine' : ''}" data-cid="${c.id}" data-cname="${esc(c.name)}">${body}${more}${ops}</div>`;
 }
 
-/* 一条朋友圈的完整 DOM。ctx: { nickname, avatar, clientKey, expanded, nowMs }
+/* 一条朋友圈的完整 DOM。ctx: { nickname, avatar, clientKey, expanded, nowMs, detail }
+   detail=true 表示这是详情页渲染（图片一行一张、不再给"阅读全文"链接）。
    图片/音视频的属性顺序与原先逐字保持一致——SSR 与客户端要产出同一串，
    否则浏览器接管后整页重绘会闪，diff 也看不出是真改了还是顺序变了。 */
 function renderPost(p, ctx) {
@@ -87,15 +89,24 @@ function renderPost(p, ctx) {
   const liked = (p.likes || []).some((l) => l.client_key === ctx.clientKey);
   // 头像未就绪时不写 src：src="" 会让浏览器再去请求当前页面 URL
   const avAttr = ctx.avatar ? ` src="${esc(ctx.avatar)}"` : '';
+  const shown = (p.images || []).slice(0, IMGS_MAX);   // 信息流宫格的显示上限
 
+  /* 图片两种排法，由 ctx.detail 决定（服务端与浏览器都传这个标记）：
+     - 信息流：最多前 IMGS_MAX 张走宫格；
+     - 详情页：全部图片一行一张，不裁切成正方形。
+     数据层目前就把一条内容的图片截在 9 张（server.js 的 POST/PUT 与编辑页同口径），
+     所以今天两者数量相同；但显示规则要独立成立——将来放宽上限时不必再回来改这里。 */
   let imgHtml = '';
-  if (p.images.length === 1) {
-    imgHtml = `<div class="p-single"><img src="${imgUrl(p.images[0])}" data-pid="${p.id}" data-idx="0" loading="lazy" decoding="async" alt=""></div>`;
-  } else if (p.images.length > 1) {
+  if (ctx.detail) {
+    imgHtml = (p.images || []).map((im, i) =>
+      `<div class="p-full"><img src="${imgUrl(im)}" data-pid="${p.id}" data-idx="${i}" loading="lazy" decoding="async" alt=""></div>`).join('');
+  } else if (shown.length === 1) {
+    imgHtml = `<div class="p-single"><img src="${imgUrl(shown[0])}" data-pid="${p.id}" data-idx="0" loading="lazy" decoding="async" alt=""></div>`;
+  } else if (shown.length > 1) {
     // 2 张与 4 张走两列：三列布局下 2 张只占容器 2/3 宽，两列才与单图（.p-single 撑满）同宽
-    const twoUp = p.images.length === 2 || p.images.length === 4;
+    const twoUp = shown.length === 2 || shown.length === 4;
     const cls = twoUp ? 'p-grid cols-2' : 'p-grid';
-    imgHtml = `<div class="${cls}">` + p.images.map((im, i) =>
+    imgHtml = `<div class="${cls}">` + shown.map((im, i) =>
       `<img src="${imgUrl(im)}" data-pid="${p.id}" data-idx="${i}" loading="lazy" decoding="async" alt="">`).join('') + '</div>';
   }
 
@@ -153,6 +164,7 @@ function renderPost(p, ctx) {
       ${mediaHtml}
       ${locHtml}
       <div class="p-foot">
+        ${ctx.detail ? '' : `<a class="p-read" href="/p/${encodeURIComponent(p.id)}">阅读全文</a>`}
         <span class="p-time">${fmtTime(p.created_at, ctx.nowMs)}</span>
         ${likeBtn}
         <div class="p-toggle" data-pid="${p.id}"><i></i><i></i></div>
@@ -169,7 +181,7 @@ function feedHTML(posts, ctx) {
 }
 
 const Render = {
-  esc, fmtTime, imgUrl, COMMENT_MAX, CMT_CLAMP_AT,
+  esc, fmtTime, imgUrl, COMMENT_MAX, CMT_CLAMP_AT, IMGS_MAX,
   ICON_HEART, ICON_LIKE_SM, ICON_CMT, ICON_PIN, ICON_IMG,
   cmtPrefix, cmtFolded, renderComment, renderPost, feedHTML,
 };

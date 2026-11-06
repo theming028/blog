@@ -157,6 +157,15 @@ input, textarea, select { font-family: inherit; }
    ⚠️ 不要再给这条加 max-height：width:100% 配 max-height 会把超高竖图直接压扁，
    想限高只能改用 object-fit:contain 留白，但那样就谈不上"撑满"了。 */
 .p-single img { width: 100%; height: auto; display: block; cursor: zoom-in; margin-top: 8px; background: #F2F2F2; }
+/* 详情页图片：一行一张、按原比例铺满列宽（宫格的 1:1 裁切只属于信息流缩略）。
+   口径与 .p-single 一致：只给 width:100%，绝不加 max-height——那会把超高竖图压扁。 */
+.p-full { margin-top: 8px; }
+.p-full img { width: 100%; height: auto; display: block; cursor: zoom-in; background: #F2F2F2; }
+/* 「阅读全文」在时间左侧、两者间隔 8px。颜色用站内链接色 --wx-blue（白底上 5.23:1 达 AA）；
+   flex:none 是必须的：不锁住的话它会被 .p-time 挤到换行或被拉宽。
+   详情页不输出这个链接（render.js 里按 ctx.detail 决定），所以这里不用额外隐藏规则。 */
+.p-read { margin-right: 8px; color: var(--wx-blue); font-size: 12px; flex: none; }
+.p-read:hover { color: var(--wx-blue-deep); text-decoration: underline; }
 
 /* 音视频：宽度与图片一致（撑满内容容器），不外套卡片、不加描边。
    视频要兜一个高度：preload="none" 时元素在拿到元数据前高度是 0，

@@ -416,20 +416,20 @@ async function feedData(includeDrafts, page, pageSize) {
 const SITE_NAME = '朝夕光年';
 const FEED_PAGE_SIZE = 10;   // 与 feed.js 首屏请求的 limit 一致，SSR 与客户端才会是同一页
 
-function ssrCtx(settings) {
+function ssrCtx(settings, detail) {
   return {
     nickname: settings.nickname,
     avatar: settings.avatar,
     clientKey: '',      // 服务端不知道"我是谁"，"我赞过"的高亮由客户端水合后补
     expanded: [],       // 折叠展开态是访问者会话状态，SSR 一律按折叠输出
     nowMs: Date.now(),
+    detail: !!detail,   // 详情页：图片一行一张、不输出"阅读全文"链接
   };
 }
 
 async function ssrForPage(req, kind, postId) {
   const settings = publicCache || DEFAULT_SETTINGS;
   const base = seo.siteBase(req);
-  const ctx = ssrCtx(settings);
   const coverImg = base && settings.cover ? `${base}${settings.cover}` : '';
 
   if (kind === 'post') {
@@ -440,6 +440,7 @@ async function ssrForPage(req, kind, postId) {
     post.comments = comments.filter((c) => c.post_id === post.id && c.status === 'visible');
     const imgs = (post.images || []).map((id) => `${base || ''}/api/images/${encodeURIComponent(id)}`);
     const titleText = `${seo.postTitle(post)} · ${SITE_NAME}`;
+    const ctx = ssrCtx(settings, true);   // 详情页：整行大图、无"阅读全文"
     const desc = seo.excerpt(post.content || (post.location ? `拍摄于 ${post.location}` : ''), 140)
       || `${SITE_NAME} · ${settings.nickname || ''} 的一张照片`;
     return {
@@ -457,6 +458,7 @@ async function ssrForPage(req, kind, postId) {
   }
 
   const d = await feedData(false, 1, FEED_PAGE_SIZE);
+  const ctx = ssrCtx(settings, false);   // 信息流：宫格缩略 + "阅读全文"
   const titleText = settings.nickname ? `${SITE_NAME} · ${settings.nickname}的光影年华` : SITE_NAME;
   const desc = [settings.sign, d.posts.length ? seo.excerpt(d.posts[0].content, 80) : '']
     .filter(Boolean).join(' —— ') || `${SITE_NAME}：旅行摄影与路上的瞬间`;
