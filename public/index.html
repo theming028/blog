@@ -70,19 +70,17 @@
   <div class="license">
     <p class="license-text">Attribution: You must attribute the work in the manner specified by the author or licensor (but not in any way that suggests that they endorse you or your use of the work). Noncommercial: You may not use this work for commercial purposes. Share Alike: If you alter, transform, or build upon this work, you may distribute the resulting work only under the same or similar license to this one.</p>
     <p class="license-text license-id">License: CC BY-NC-SA 4.0</p>
-    <!-- 版权 / ICP 备案号 / 访客计数：这三行原先是 .phone 之后的三个裸 div，结果完全看不见——
-         #garden-bg 是 position:fixed + z-index:0，按 CSS 绘制顺序它会盖在「同层叠上下文里
-         非定位的后继块级内容」之上，花园的天空与草地直接糊在这三行字上（.phone 自己带
-         position:relative 才躲过这一层）。搬进这块灰底模块：既有不透明底色托着，
-         又在白列之内，不再跟花园层抢绘制顺序。
-         备案号仍放在 #copyright 之后而不是之内——feed.js 用 textContent 写 #copyright，
-         塞进去每次渲染都会被吞掉。 -->
-    <div class="license-foot">
-      <div class="copyright" id="copyright"></div>
-      <p class="icp"><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">蜀ICP备2022004138号-2</a></p>
-      <!-- 独立访客计数（按 IP 哈希去重；取数失败时整行不显示） -->
-      <div class="visitors" id="visitors"></div>
-    </div>
+  </div>
+  <!-- 版权 + ICP 备案号：一行两列、中间隔 16px，与上面的 license 模块用一条横线分隔。
+       必须留在 .phone 之内并自带灰底：#garden-bg 是 position:fixed + z-index:0，按 CSS
+       绘制顺序会盖在「同层叠上下文里非定位的后继块级内容」之上——上一版这三行放在 .phone
+       之外，被花园的天空与草地整个糊住、肉眼完全看不见（不是对比度问题，是没轮到它们画在上面）。
+       备案号仍排在 #copyright 之后：feed.js 用 textContent 写 #copyright，
+       把它塞进同一个节点里每次渲染都会被吞掉。
+       「你是第 N 位访客」按邵先生要求撤掉了；后台「访客记录」走另一套 /api/track/*，不受影响。 -->
+  <div class="foot-line">
+    <span class="copyright" id="copyright"></span>
+    <span class="icp"><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">蜀ICP备2022004138号-2</a></span>
   </div>
 </div>
 

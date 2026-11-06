@@ -46,6 +46,13 @@ node -e "console.log(require('crypto').createHash('sha256').update('tm-blog-salt
 - **缓存**：`html/css/js` 是 `no-cache` + `ETag`/`Last-Modified`（命中返回 304），改完**普通刷新即生效**；`public/` 下图片 `max-age=300`；`/api/images/*` 因 id 内容寻址，用 `immutable` 一年。
 - **CSP 为 `script-src 'self'`**：不要往 HTML 里加内联 `<script>`，会被拦。内联样式属性可以用（`style-src` 允许 `unsafe-inline`）。
 - **全局字体**在两份 CSS 的 `body` 上（`wx.css` 前台，`admin.css` 后台/发布/登录），表单控件靠 `font-family: inherit` 跟上。
+- **页脚最后一行只有两项**：`.foot-line` 里 `版权 + ICP 备案号`，flex 一行、`gap: 16px`，与上面的
+  `.license` 模块用 `.5px` 横线分隔；备案号 `蜀ICP备2022004138号-2` 链到 `beian.miit.gov.cn`（法规要求，别去掉）。
+  ⚠️ 这一行**必须留在 `.phone` 之内且自带灰底**：`#garden-bg` 是 `position:fixed; z-index:0`，按 CSS 绘制顺序
+  会盖住同层叠上下文里「非定位的后继块级内容」——把它挪到 `.phone` 外面当裸 div，就会被花园的天空与草地
+  整个糊住、肉眼完全看不见（2026-11 真实踩过，当时误判成对比度问题）。新增 fixed 背景层时要照这条复查一遍裸块。
+- **页脚不再显示「你是第 N 位访客」**（邵先生要求），前台也不再上报 `POST /api/visit`；接口与 `visitors` 表先留着，
+  后台「访客记录」走的是另一套 `/api/track/*`，与这条无关。
 - 评论反垃圾在 `lib/spam.js`，命中转 `pending` 进后台待审，前台不展示。
 - **点赞是累加模型**：`POST /api/posts/:id/like` 每次记一行（双击可累加），`DELETE` 清空该访客在这条下的全部赞；
   按 `IP+帖子` 节流（1 秒 3 次 / 60 秒 60 次）。**不要**给 `likes` 加唯一索引或在应用层恢复去重查询。

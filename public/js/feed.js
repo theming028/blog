@@ -839,18 +839,10 @@ async function checkAdmin() {
   }
 }
 
-/* ---------- 独立访客计数 ----------
- * 由浏览器上报，因此爬虫和不执行 JS 的客户端不计入；失败就整行不显示，绝不影响读博客 */
-async function loadVisitors() {
-  const el = $('#visitors');
-  if (!el) return;
-  try {
-    const r = await api('/api/visit', { method: 'POST', body: {} });
-    if (r && typeof r.visitors === 'number' && r.visitors > 0) {
-      el.textContent = `你是第 ${r.visitors} 位访客`;
-    }
-  } catch (e) { /* 静默降级 */ }
-}
+/* ---------- 独立访客计数（已下线） ----------
+ * 页脚「你是第 N 位访客」按邵先生要求移除，这里不再上报 POST /api/visit。
+ * 服务端路由先留着：后台「访客记录」走的是 /api/track/* 那一套，与此无关，
+ * 少一个调用点不等于要动接口；真要清接口时再一起清 lib/visit.js 与 visitors 表。 */
 
 /* ---------- 启动 ---------- */
 async function loadSettings() {
@@ -896,7 +888,6 @@ async function loadLinks() {
   buildEmojiPanel();
   checkAdmin();
   loadLinks();
-  loadVisitors();            // 不 await：页脚计数不该挡信息流
   /* 设置与信息流互不依赖，原先 `await loadSettings()` 再 loadPosts 是白等一个来回；
      跨境链路上一个 RTT 约 400ms，并行掉它就是一次实打实的提前。
      两边各自兜底：设置取不到用默认值，只有帖子取不到才提示加载失败。 */
