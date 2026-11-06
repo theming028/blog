@@ -413,11 +413,23 @@ video.p-media-el { aspect-ratio: 16 / 10; object-fit: contain; }
 #mulepage-footer, .mulepage-footer { display: none !important; }
 .loading { text-align: center; color: var(--wx-gray); font-size: 13px; padding: 40px 0; }
 
-.copyright { text-align: center; color: var(--wx-sub); font-size: 12px; line-height: 1.8; padding: 20px 16px 6px; }
-/* 访客计数行：紧贴版权下方，同色同字号形成一组页脚信息。
-   :empty 是取数失败的兜底——不显示文字但仍把底部留白补回来，页脚不会突然缩短 */
-.visitors { text-align: center; color: var(--wx-sub); font-size: 12px; line-height: 1.8; padding: 0 16px 40px; }
-.visitors:empty { padding: 0 16px 34px; }
+/* 页脚三行（版权 / ICP 备案号 / 访客计数）搬进灰底 .license 模块内，见 index.html。
+   原先它们是 .phone 之后的裸块，被 position:fixed + z-index:0 的花园层按绘制顺序
+   整个盖住，肉眼完全看不见——不是对比度问题，是没轮到它们画在上面。
+   左右内边距交给模块自己（24px，窄屏 14px），这里只管行距与颜色。 */
+.license-foot { margin-top: 16px; text-align: center; color: var(--wx-sub); font-size: 12px; line-height: 1.8; }
+.copyright, .icp, .visitors { text-align: center; color: var(--wx-sub); font-size: 12px; line-height: 1.8; }
+/* 三行之间的呼吸：用相邻兄弟而不是各自 padding，改一处就整体跟着变 */
+.license-foot > * + * { margin-top: 2px; }
+/* ICP 备案号：法规要求挂在页脚显著位置，并链接到工信部备案查询站。
+   颜色沿用站内既有的链接色 --wx-blue（在灰底 #f0f0f0 上实测 4.67:1，达 AA；
+   悬停 --wx-blue-deep 6.52:1）。全局 a 是无下划线的，这里必须显式加上下划线，
+   否则在灰底小字里它和上面的版权行看不出是可点的。 */
+.icp a { color: var(--wx-blue); text-decoration: underline; text-underline-offset: 2px; }
+.icp a:hover { color: var(--wx-blue-deep); }
+/* 访客计数取数失败时整行是空的：模块自带 22px 下内边距兜住高度，
+   这里直接不收占位（原先那套 :empty 补 padding 的写法是给裸块用的，搬进模块后多余） */
+.visitors:empty { display: none; }
 
 /* 网上邻居（友情链接）— 纯文字链接，无分割线；用页面灰底而非 .phone 的白底 */
 /* 版权（CC 授权条款）提醒：与 .blogroll 同属灰底页脚带，用自身上边框把它们分开——
@@ -507,9 +519,8 @@ video.p-media-el { aspect-ratio: 16 / 10; object-fit: contain; }
   .copyright, .blogroll-item { line-height: 1.45; }
   /* 评论者昵称在触屏下提到中粗，从灰底正文里区分出来 */
   .cmt .nm { font-weight: 500; }
-  /* 版权行底部留白收到 8px（PC 仍是 6px）。触屏判定用 hover/pointer 而不是宽度，
-     所以平板竖屏这类 >480px 的移动设备也能命中；窄窗口的桌面浏览器见下方 480 断点。 */
-  .copyright { padding-bottom: 8px; }
+  /* 原先这里有一条 .copyright { padding-bottom: 8px }：页脚三行搬进 .license 模块后
+     间距由模块与 .license-foot 统一给，那条单独的微调已经没有作用对象了。 */
   /* 热区撤掉后翻页只能点按钮本身，尺寸给到 44px 才够手指按 */
   .v-arrow { width: 44px; height: 44px; }
   .v-nav { gap: 20px; bottom: calc(26px + env(safe-area-inset-bottom)); }
@@ -526,8 +537,8 @@ video.p-media-el { aspect-ratio: 16 / 10; object-fit: contain; }
   .p-location svg { width: 13px; height: 13px; }
   .blogroll { padding: 20px 14px; }
   .license { padding: 18px 14px 20px; }
-  /* 底部留白与上方触屏规则保持同一个值（原来这里是 32px，会在手机上盖掉触屏那条） */
-  .copyright { padding: 16px 14px 8px; }
+  /* 页脚三行的左右留白跟着模块一起收窄（.license 的 padding 已改 14px），
+     这里不再单独给 .copyright 写 padding——搬进模块后它归模块管。 */
   /* 封面按比例收窄，避免未滚动时第一条内容完全看不见；昵称/签名/头像间距随动。
      高度不跟 19:7 走，所以这里是「第三种槽位几何」：19:7 的图在此框内会被横向切掉
      约 40% 宽度，具体数字与影响见上方封面区块的注释。 */
