@@ -27,6 +27,10 @@ body {
   --wx-green: #07C160;
   --wx-red: #FA5151;
   --phone-w: 760px;    /* 版面宽度唯一来源：.phone 与 .nav 都引用它，避免两处各写一份而走偏 */
+  /* 朋友圈条目左右留白唯一来源：.post 的横向 padding、详情页「返回」的左缩进、
+     移动端头像的绝对定位起点都读它。三处必须是同一个值，否则「返回」和头像对不齐。
+     窄屏断点里改成 14px，与 .post 原来的 18px 14px 完全等值，不产生新视觉。 */
+  --post-pad-x: 24px;
   --nav-h: 48px;       /* 导航条高度唯一来源：.nav 本体与 .nav-btn 触控区都引用它（按钮高度不跟就会比条带矮 4px，图标偏上 2px） */
 }
 
@@ -145,7 +149,7 @@ input, textarea, select { font-family: inherit; }
 
 /* ============ 朋友圈条目 ============ */
 /* 信息流分隔线单独比 --wx-line(#E7E7E7) 再浅一档；不动 token，避免连带改浅后台列表线 */
-.post { display: flex; padding: 24px; background: #fff; border-bottom: .5px solid #F0F0F0; }
+.post { display: flex; padding: 24px var(--post-pad-x); background: #fff; border-bottom: .5px solid #F0F0F0; }
 .p-avatar { width: 42px; height: 42px; border-radius: 6px; margin-right: 12px; flex: none; object-fit: cover; background: #D8D8D8; }
 .p-body { flex: 1; min-width: 0; }
 .p-name { color: var(--wx-blue); font-size: 14px; font-weight: 600; line-height: 1.4; margin-bottom: 4px; display: inline-block; }
@@ -208,6 +212,11 @@ video.p-media-el { aspect-ratio: 16 / 10; object-fit: contain; }
 
 /* 点赞/评论 深色气泡 */
 .pop {
+  /* 定位锚点是 ··· 按钮本身（feed.js 把气泡挂进 .p-toggle），不再挂在 .p-foot 那一行：
+     移动端 .p-foot 要拆成 display:contents 好把时间提到昵称下面，拆掉之后它就不再产生盒子、
+     当不了锚点，气泡会一路往上找 .post 定位。改挂到按钮上以后几何完全等价：
+     按钮右缘原本就贴着那一行右缘，原值 right:34px 减去按钮宽 28px = 6px 间隙；
+     竖直方向原来对整行(≥26px)取中，按钮(18px)在行内本就居中，同一个中心。 */
   /* 竖直居中交给独立的 translate 属性，不再硬编码 margin-top 半高（旧值 -17px 比
      实际半高 35/2=17.5 少 0.5px，触屏 padding 12→16 后 item 高 41、半高 20.5，
      差到 3.5px，就是"气泡比 ··· 低一截、移动端更明显"的那个观感）。
@@ -215,7 +224,7 @@ video.p-media-el { aspect-ratio: 16 / 10; object-fit: contain; }
      两者互相覆盖，动画那 130ms 里居中会整个失效（先低后跳，看着像抖）。
      translate 与 transform 是两个独立属性，可叠加，且与气泡高度无关，
      所以 .pop-item 的 padding 怎么改都不需要再同步一个魔法数。 */
-  position: absolute; right: 34px; top: 50%; translate: 0 -50%; z-index: 30;
+  position: absolute; right: calc(100% + 6px); top: 50%; translate: 0 -50%; z-index: 30;
   background: #4C4C4C; border-radius: 5px; display: flex; color: #fff;
   box-shadow: 0 2px 12px rgba(0, 0, 0, .25);
   animation: popin .13s ease-out; transform-origin: right center;
@@ -373,15 +382,16 @@ body[data-page="post"] #cbarCancel { display: none; }
 /* 评论列表与评论表单断开、间隔 16px：原先 .cbar 靠一条 border-top 直接贴在 .cmt-list 下面，
    两块灰底（.acts 与表单）连成一片，看上去像同一栏，容易误以为表单也是评论之一。 */
 body[data-page="post"] .cbar.show { margin-top: 16px; border-top: 0; }
-/* 详情页封面下方的返回行：两个动作一行并排，中间隔 16px。
-   返回上一页是 button（走 history.back()），返回朋友圈是 <a href="/">（真链接，爬虫走得通）。 */
-.back-home { display: flex; align-items: center; justify-content: center; gap: 16px; padding: 12px 16px 0; }
+/* 详情页封面下方的返回行：只剩一条指回首页的真链接。
+   左对齐用 --post-pad-x，与 .post 的横向留白同源，所以「返回」的字面左边界
+   正好压在信息流头像（.p-avatar）的左边界上，不用在两个地方各抄一份 24px/14px。 */
+.back-home { display: flex; align-items: center; justify-content: flex-start; padding: 12px 16px 0 var(--post-pad-x); }
 .back-home[hidden] { display: none; }
-.back-home a, .back-home button {
+.back-home a {
   background: none; border: 0; padding: 0; cursor: pointer;
   color: var(--wx-blue); font-size: 14px; font-family: inherit; line-height: 1.4;
 }
-.back-home a:hover, .back-home button:hover { color: var(--wx-blue-deep); text-decoration: underline; }
+.back-home a:hover { color: var(--wx-blue-deep); text-decoration: underline; }
 
 /* ============ 大图查看器 ============ */
 .viewer {
@@ -565,13 +575,33 @@ body[data-page="post"] .cbar.show { margin-top: 16px; border-top: 0; }
 /* 窄屏：正文放大到移动端舒适值，并把 24px 两侧留白收窄（375px 屏上左右共吃掉 13% 宽度）。
    字号统一按 +2px 阶梯走，保持朋友圈原有的层级关系不被打乱。 */
 @media (max-width: 480px) {
-  .post { padding: 18px 14px; }
-  /* 正文字号改走 token：这样「阅读全文」会一起跟上，不用在下面再抄一份 16px */
-  :root { --p-text-size: 16px; }
+  /* 正文字号改走 token：这样「阅读全文」会一起跟上，不用在下面再抄一份 16px。
+     --post-pad-x 同步收窄到 14px，「返回」的左缩进跟着头像一起对齐，不各抄一份。 */
+  :root { --p-text-size: 16px; --post-pad-x: 14px; }
   .p-name { font-size: 15px; }
   .acts { font-size: 15px; }
   .p-time, .p-location { font-size: 13px; }
   .p-location svg { width: 13px; height: 13px; }
+  /* ---- 正文拉通：375px 屏上"头像列 + 54px 缩进"要占掉 14% 的宽度，窄屏经不起。
+         做法是 .post 改成块级、头像绝对定位浮在左上角，.p-body 因此占满整条内容宽度；
+         只有头部三行（昵称/时间/位置）用 54px = 42px 头像 + 12px 间距 把自己缩进回去，
+         正文、图片、操作行、评论区天然就是拉通的，不需要负 margin 去挣脱。
+         .p-foot 用 display:contents 拆开，时间才能被 order 提到昵称下面与位置同行；
+         代价是它不再产生盒子（既当不了气泡锚点，也当不了 26px 行高），
+         锚点已交给 .p-toggle，行高用 margin-top: 8px 还原（6px 行距 + 居中余量 2px）。 ---- */
+  .post { display: block; position: relative; padding: 18px var(--post-pad-x); }
+  .p-avatar { position: absolute; left: var(--post-pad-x); top: 18px; margin-right: 0; }
+  .p-body { display: flex; flex-wrap: wrap; align-items: center; }
+  .p-foot { display: contents; }
+  /* 昵称独占一行（basis 100% 就是换行符），时间+位置落在它下面同一行，两者间隔 12px */
+  .p-name { flex: 1 1 100%; padding-left: 54px; }
+  .p-time { order: 1; flex: 0 1 auto; margin-left: 54px; }
+  .p-location { order: 2; flex: 0 1 auto; margin-top: 0; margin-left: 12px; }
+  .p-text { order: 3; flex: 1 1 100%; }
+  /* 图片/音视频没被点名，但夹在正文与操作行中间，只有跟着拉通才不会一宽一窄地错位 */
+  .p-single, .p-grid, .p-full, .p-audio, .p-media-el { order: 4; flex: 1 1 100%; }
+  .p-read, .like-row, .p-toggle { order: 5; margin-top: 8px; }
+  .acts { order: 6; flex: 1 1 100%; }
   .blogroll { padding: 20px 14px; }
   .license { padding: 18px 14px 20px; }
   /* 页脚三行的左右留白跟着模块一起收窄（.license 的 padding 已改 14px），

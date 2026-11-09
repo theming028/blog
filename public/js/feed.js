@@ -160,11 +160,16 @@ function openPop(toggleEl, pid) {
   pop.innerHTML = `
     <div class="pop-item" data-act="cmt">${ICON_CMT}<span>评论</span></div>`;
   toggleEl.classList.add('on');
-  toggleEl.parentElement.appendChild(pop);
+  /* 挂进按钮自己而不是它爹：移动端 .p-foot 被拆成 display:contents（把时间提到昵称下面），
+     不再产生盒子，气泡的绝对定位会一路找到 .post。锚在 .p-toggle 上，桌面/手机同一个参照系。
+     .pop 的 right: calc(100% + 6px) 与旧的 right: 34px 等价，见 wx.css 那条注释。 */
+  toggleEl.appendChild(pop);
   pop.addEventListener('click', async (e) => {
+    // 气泡现在是按钮的子节点：不先掐掉冒泡，点气泡空白处会一路传到按钮自己的开合逻辑，
+    // 结果是"点气泡 → 气泡被关掉"。整块都不外传，只有 .pop-item 往下走。
+    e.stopPropagation();
     const item = e.target.closest('.pop-item');
     if (!item) return;
-    e.stopPropagation(); // 气泡自身的监听已处理这条点击，不必再冒到 document 走外点兜底
     closePop();
     openCbar(pid, null);
     // 气泡里只有"评论"一项：点赞走右下角常驻按钮（历史上这里放过点赞与分享，
@@ -728,14 +733,6 @@ async function loadPosts(page) {
   renderPager();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
-
-/* 详情页封面下方的「返回上一页」：优先走浏览器历史（用户从哪儿来就回哪儿去，
-   也符合微信里"返回"的直觉）；没有历史可退时（直接搜进详情页、新开标签、刷新后
-   history.length 仍可能为 1）退回首页，绝不能点了没反应。 */
-$('#backPrevBtn').addEventListener('click', () => {
-  if (history.length > 1) history.back();
-  else location.href = '/';
-});
 
 $('#pager').addEventListener('click', (e) => {
   const btn = e.target.closest('[data-page]');

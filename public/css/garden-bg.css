@@ -114,10 +114,9 @@
   z-index: 0;
   overflow: hidden;
   pointer-events: none;
-  background: var(--garden-sky-top, #83c3fd);
-  display: none;                    /* 默认窄屏不显示，桌面档再打开 */
+  background: var(--bg-photo) 0 0 / 100% 100% no-repeat, var(--garden-sky-top, #83c3fd);
 }
 
-@media (min-width: 720px) {
-  #garden-bg { display: block; }
-}
+/* 花园图层默认隐藏，选中花园背景时由 JS 显示 */
+#garden-bg .g-scene { display: none; }
+#garden-bg.bg-garden .g-scene { display: block; }

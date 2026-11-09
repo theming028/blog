@@ -160,3 +160,28 @@ async function uploadImageFile(file) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
 })();
+
+/* 页面背景图轮换：每次刷新随机选取一张（含花园共 5 项），避免连续两次重复 */
+(function rotateBg() {
+  const BG_LIST = [
+    'garden',
+    '/assets/background-01.avif',
+    '/assets/background-02.avif',
+    '/assets/background-03.avif',
+    '/assets/background-04.avif',
+  ];
+  const last = sessionStorage.getItem('tm_bg_last');
+  let idx = Math.floor(Math.random() * BG_LIST.length);
+  if (BG_LIST.length > 1 && BG_LIST[idx] === last) {
+    idx = (idx + 1) % BG_LIST.length;
+  }
+  sessionStorage.setItem('tm_bg_last', BG_LIST[idx]);
+  const el = document.getElementById('garden-bg');
+  if (BG_LIST[idx] === 'garden') {
+    el.classList.add('bg-garden');
+    document.documentElement.style.setProperty('--bg-photo', 'none');
+  } else {
+    el.classList.remove('bg-garden');
+    document.documentElement.style.setProperty('--bg-photo', `url('${BG_LIST[idx]}')`);
+  }
+})();
