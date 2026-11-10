@@ -42,13 +42,13 @@ const imgUrl = (id) => `/api/images/${encodeURIComponent(id)}`;
 
 const COMMENT_MAX = 200;   // 与 server.js 的同名常量保持一致（输入框 maxlength 亦为此值）
 const CMT_CLAMP_AT = 80;   // 评论超过此字数先折叠；按码点计数，避免切碎 emoji 造成乱码
-const IMGS_MAX = 9;        // 信息流宫格的显示上限（数据层同样截在 9 张，这里只管显示）
 
 const ICON_HEART = '<svg viewBox="0 0 24 24"><path d="M12 21s-7.5-4.7-10-9.3C.5 8.6 2.4 5 5.8 5c2 0 3.4 1 4.2 2.4h4c.8-1.4 2.2-2.4 4.2-2.4 3.4 0 5.3 3.6 3.8 6.7C19.5 16.3 12 21 12 21z"/></svg>';
 const ICON_LIKE_SM = '<svg viewBox="0 0 24 24"><path d="M12 21.3C10.6 20.2 2.5 14.6 2.5 8.9 2.5 5.6 5 3.5 7.6 3.5c1.8 0 3.4.9 4.4 2.4 1-1.5 2.6-2.4 4.4-2.4 2.6 0 5.1 2.1 5.1 5.4 0 5.7-8.1 11.3-9.5 12.4z"/></svg>';
 const ICON_CMT = '<svg viewBox="0 0 24 24"><path d="M12 3C6.5 3 2 6.9 2 11.7c0 2.7 1.4 5.1 3.7 6.7-.2 1-.8 2.2-1.6 3 1.7-.2 3.3-.9 4.4-1.7 1.1.3 2.3.5 3.5.5 5.5 0 10-3.9 10-8.5S17.5 3 12 3z"/></svg>';
 const ICON_PIN = '<svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>';
 const ICON_IMG = '<svg viewBox="0 0 24 24"><path d="M21 3H3a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h18a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1zM8.5 9A1.5 1.5 0 1 1 7 10.5A1.5 1.5 0 0 1 8.5 9zM5 18l4.5-6 3 4 2.5-3 4 5z"/></svg>';
+const ICON_SHARE = '<svg viewBox="0 0 24 24"><path d="M18 8.5a3.5 3.5 0 1 0-3.4-4.3L8.9 7.2a3.5 3.5 0 1 0 0 4.9l5.7 3a3.5 3.5 0 1 0 1-1.9l-5.7-3a3.6 3.6 0 0 0 0-1.1l5.7-3c.6.8 1.5 1.4 2.4 1.4z"/></svg>';
 
 /* 评论前缀（昵称 + 回复对象），折叠切换时需要重拼，单独抽出 */
 function cmtPrefix(c) {
@@ -89,13 +89,11 @@ function renderPost(p, ctx) {
   const liked = (p.likes || []).some((l) => l.client_key === ctx.clientKey);
   // 头像未就绪时不写 src：src="" 会让浏览器再去请求当前页面 URL
   const avAttr = ctx.avatar ? ` src="${esc(ctx.avatar)}"` : '';
-  const shown = (p.images || []).slice(0, IMGS_MAX);   // 信息流宫格的显示上限
+  const shown = (p.images || []).slice();
 
   /* 图片两种排法，由 ctx.detail 决定（服务端与浏览器都传这个标记）：
-     - 信息流：最多前 IMGS_MAX 张走宫格；
-     - 详情页：全部图片一行一张，不裁切成正方形。
-     数据层目前就把一条内容的图片截在 9 张（server.js 的 POST/PUT 与编辑页同口径），
-     所以今天两者数量相同；但显示规则要独立成立——将来放宽上限时不必再回来改这里。 */
+     - 信息流：全部图片走宫格（上传上限已放开，不再截前 9 张）；
+     - 详情页：全部图片一行一张，不裁切成正方形。 */
   let imgHtml = '';
   if (ctx.detail) {
     imgHtml = (p.images || []).map((im, i) =>
@@ -112,6 +110,15 @@ function renderPost(p, ctx) {
 
   const locHtml = p.location
     ? `<div class="p-location">${ICON_PIN}${esc(p.location)}</div>` : '';
+
+  /* 详情页：头像、昵称、时间（连同位置）包进 .p-head 一个整体，正文在它下面——
+     头像必须一起包进去，否则它比文字行高，正文会被头像底部"压"住。
+     信息流保持原布局，时间仍在 .p-foot 里。 */
+  const avImg = `<img class="p-avatar"${avAttr} alt="">`;
+  const nameHtml = `<span class="p-name">${esc(ctx.nickname)}</span>`;
+  const timeHtml = `<span class="p-time">${fmtTime(p.created_at, ctx.nowMs)}</span>`;
+  const headHtml = ctx.detail ? `<div class="p-head">${avImg}<div class="p-head-txt">${nameHtml}${timeHtml}${locHtml}</div></div>` : nameHtml;
+  const footTime = ctx.detail ? '' : timeHtml;
 
   /* 音视频：只播外链（本站不托管媒体文件），一条内容最多 3 段，排在图片之后。
      - video 用 preload="none"：列表里刷过去时一个字节都不下，点开才取流；
@@ -156,16 +163,15 @@ function renderPost(p, ctx) {
 
   return `
   <div class="post" data-pid="${p.id}">
-    <img class="p-avatar"${avAttr} alt="">
+    ${ctx.detail ? '' : avImg}
     <div class="p-body">
-      <span class="p-name">${esc(ctx.nickname)}</span>
+      ${headHtml}
       ${p.content ? `<div class="p-text">${esc(p.content)}</div>` : ''}
       ${imgHtml}
       ${mediaHtml}
-      ${locHtml}
+      ${ctx.detail ? '' : locHtml}
       <div class="p-foot">
-        ${ctx.detail ? '' : `<a class="p-read" href="/p/${encodeURIComponent(p.id)}">阅读全文</a>`}
-        <span class="p-time">${fmtTime(p.created_at, ctx.nowMs)}</span>
+        ${footTime}
         ${likeBtn}
         <div class="p-toggle" data-pid="${p.id}"><i></i><i></i></div>
       </div>
@@ -181,8 +187,8 @@ function feedHTML(posts, ctx) {
 }
 
 const Render = {
-  esc, fmtTime, imgUrl, COMMENT_MAX, CMT_CLAMP_AT, IMGS_MAX,
-  ICON_HEART, ICON_LIKE_SM, ICON_CMT, ICON_PIN, ICON_IMG,
+  esc, fmtTime, imgUrl, COMMENT_MAX, CMT_CLAMP_AT,
+  ICON_HEART, ICON_LIKE_SM, ICON_CMT, ICON_PIN, ICON_IMG, ICON_SHARE,
   cmtPrefix, cmtFolded, renderComment, renderPost, feedHTML,
 };
 
