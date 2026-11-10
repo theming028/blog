@@ -26,7 +26,7 @@ body {
   --wx-line: #E7E7E7;
   --wx-green: #07C160;
   --wx-red: #FA5151;
-  --phone-w: 760px;    /* 版面宽度唯一来源：.phone 与 .nav 都引用它，避免两处各写一份而走偏 */
+  --phone-w: 800px;    /* 版面宽度唯一来源：.phone 与 .nav 都引用它，避免两处各写一份而走偏 */
   /* 朋友圈条目左右留白唯一来源：.post 的横向 padding、详情页「返回」的左缩进、
      移动端头像的绝对定位起点都读它。三处必须是同一个值，否则「返回」和头像对不齐。
      窄屏断点里改成 14px，与 .post 原来的 18px 14px 完全等值，不产生新视觉。 */
@@ -153,6 +153,13 @@ input, textarea, select { font-family: inherit; }
 .p-avatar { width: 42px; height: 42px; border-radius: 6px; margin-right: 12px; flex: none; object-fit: cover; background: #D8D8D8; }
 .p-body { flex: 1; min-width: 0; }
 .p-name { color: var(--wx-blue); font-size: 14px; font-weight: 600; line-height: 1.4; margin-bottom: 4px; display: inline-block; }
+/* 详情页头部整体：头像/昵称/时间/位置包一行，正文从下一行开始（结构见 render.js 的 headHtml）。
+   align-items:center 让头像与单行文字垂直居中；正文与头部间距由 margin-bottom 保证（≥16px）。 */
+.p-head { display: flex; align-items: center; margin-bottom: 16px; }
+/* 文字块纵向堆叠：昵称在上、时间（连同位置）在下 */
+.p-head-txt { display: flex; flex-direction: column; align-items: flex-start; }
+.p-head-txt .p-name { margin-bottom: 0; }
+.p-head-txt .p-location { margin-top: 4px; }
 .p-text { font-size: var(--p-text-size); line-height: 1.55; color: var(--wx-text); white-space: pre-wrap; word-break: break-word; }
 
 .p-grid { margin-top: 8px; display: grid; gap: 5px; grid-template-columns: repeat(3, 1fr); }
@@ -442,7 +449,7 @@ body[data-page="post"] .cbar.show { margin-top: 16px; border-top: 0; }
 }
 .mask.show { display: flex; }
 .dlg { width: 280px; background: #fff; border-radius: 12px; overflow: hidden; text-align: center; animation: popin .15s ease-out; }
-.dlg-msg { padding: 24px 22px 22px; font-size: 13px; line-height: 1.55; color: var(--wx-text); }
+.dlg-msg { padding: 24px 22px 22px; font-size: 13px; line-height: 1.55; color: var(--wx-text); word-break: break-all; }
 /* .dlg-title / .dlg-input 已随"昵称独立弹窗"一起删除——前台只剩确认与提示两种弹窗，均不用它们 */
 .dlg-btns { display: flex; border-top: .5px solid #E5E5E5; }
 .dlg-btns button { flex: 1; height: 44px; background: #fff; border: 0; font-size: 14px; color: var(--wx-text); cursor: pointer; }
@@ -578,6 +585,8 @@ body[data-page="post"] .cbar.show { margin-top: 16px; border-top: 0; }
   /* 正文字号改走 token：这样「阅读全文」会一起跟上，不用在下面再抄一份 16px。
      --post-pad-x 同步收窄到 14px，「返回」的左缩进跟着头像一起对齐，不各抄一份。 */
   :root { --p-text-size: 16px; --post-pad-x: 14px; }
+  /* 顶部固定导航不占文档流，.feed 靠 padding-top 让出它的位置；窄屏减半 */
+  .feed { padding-top: calc(23px + env(safe-area-inset-top) / 2); }
   .p-name { font-size: 15px; }
   .acts { font-size: 15px; }
   .p-time, .p-location { font-size: 13px; }
@@ -595,6 +604,11 @@ body[data-page="post"] .cbar.show { margin-top: 16px; border-top: 0; }
   .p-foot { display: contents; }
   /* 昵称独占一行（basis 100% 就是换行符），时间+位置落在它下面同一行，两者间隔 12px */
   .p-name { flex: 1 1 100%; padding-left: 54px; }
+  /* 详情页 .p-head 整体缩进到头像右侧，昵称/时间/位置保持在同一行 */
+  .p-head { flex: 1 1 100%; padding-left: 54px; margin-bottom: 16px; }
+  .p-head-txt .p-name { padding-left: 0; }
+  .p-head-txt .p-time { order: 0; margin-left: 0; margin-top: 0; }
+  .p-head-txt .p-location { order: 0; margin-left: 0; }
   .p-time { order: 1; flex: 0 1 auto; margin-left: 54px; }
   .p-location { order: 2; flex: 0 1 auto; margin-top: 0; margin-left: 12px; }
   .p-text { order: 3; flex: 1 1 100%; }
