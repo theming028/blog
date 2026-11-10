@@ -165,7 +165,6 @@ async function uploadImageFile(file) {
 (function rotateBg() {
   const BG_LIST = [
     'garden',
-    '/assets/background-01.avif',
     '/assets/background-02.avif',
     '/assets/background-03.avif',
     '/assets/background-04.avif',
