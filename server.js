@@ -727,7 +727,7 @@ async function handleApi(req, res, pathname, query) {
     const b = await readBody(req);
     // 先规范化 images 再做"三空"判定：上一版判定时用的是未规范化的 b.images，
     // 于是 {"content":"","images":"abc"} 能过关（字符串有 length），产出一条三全的空帖
-    const images = Array.isArray(b.images) ? b.images.slice(0, 9) : [];
+    const images = Array.isArray(b.images) ? b.images.filter(Boolean) : [];
     const media = sanitizeMedia(b.media);
     if (!b.content && !images.length && !media.list.length) return sendError(res, 400, '内容、图片、音视频不能同时为空');
     if (String(b.content || '').length > POST_MAX) return sendError(res, 400, `正文不能超过 ${POST_MAX} 字`);
@@ -762,7 +762,7 @@ async function handleApi(req, res, pathname, query) {
       patch.content = String(b.content);
     }
     if (b.location !== undefined) patch.location = b.location ? String(b.location) : null;
-    if (b.images !== undefined) patch.images = Array.isArray(b.images) ? b.images.slice(0, 9) : [];
+    if (b.images !== undefined) patch.images = Array.isArray(b.images) ? b.images.filter(Boolean) : [];
     // 与创建走同一个清洗：否则"编辑时贴个 javascript: 链接"就能绕过发布时的校验
     if (b.media !== undefined) {
       const mm = sanitizeMedia(b.media);
