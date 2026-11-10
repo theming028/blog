@@ -43,11 +43,6 @@ $('#fileInput').addEventListener('change', async (e) => {
   const files = Array.from(e.target.files || []);
   e.target.value = '';
   if (!files.length) return;
-  const room = 9 - images.length;
-  if (files.length > room) {
-    alertDlg(`最多 9 张图片，还可以添加 ${room} 张`);
-  }
-  const list = files.slice(0, room);
   try {
     for (let i = 0; i < list.length; i++) {
       $('#eUp').textContent = `正在上传第 ${i + 1}/${list.length} 张…`;
