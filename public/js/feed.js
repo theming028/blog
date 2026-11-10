@@ -21,7 +21,7 @@ const state = {
   settings: {}, // 默认值只在 server.js 一处维护，前端等 /api/settings 下发，避免多副本漂移
 };
 
-const { ICON_HEART, ICON_LIKE_SM, ICON_CMT, ICON_PIN, ICON_IMG } = Render;
+const { ICON_HEART, ICON_LIKE_SM, ICON_CMT, ICON_PIN, ICON_IMG, ICON_SHARE } = Render;
 
 /* 特效调度：只认三个合法值，其它一律按默认飘雪处理 */
 function applyFx(mode) {
@@ -158,6 +158,7 @@ function openPop(toggleEl, pid) {
   const pop = document.createElement('div');
   pop.className = 'pop';
   pop.innerHTML = `
+    <div class="pop-item" data-act="share">${ICON_SHARE}<span>分享</span></div>
     <div class="pop-item" data-act="cmt">${ICON_CMT}<span>评论</span></div>`;
   toggleEl.classList.add('on');
   /* 挂进按钮自己而不是它爹：移动端 .p-foot 被拆成 display:contents（把时间提到昵称下面），
@@ -171,9 +172,22 @@ function openPop(toggleEl, pid) {
     const item = e.target.closest('.pop-item');
     if (!item) return;
     closePop();
+    if (item.dataset.act === 'share') {
+      // 分享＝弹窗展示详情页链接，点"复制"才写入剪贴板
+      const url = `${location.origin}/p/${encodeURIComponent(pid)}`;
+      const ok = await confirmDlg(url, '复制');
+      if (ok) {
+        try {
+          await navigator.clipboard.writeText(url);
+        } catch (err) {
+          // 剪贴板 API 被拒（如非安全上下文）时退回 prompt，至少让链接拿得到
+          prompt('复制下方分享链接', url);
+        }
+      }
+      return;
+    }
     openCbar(pid, null);
-    // 气泡里只有"评论"一项：点赞走右下角常驻按钮（历史上这里放过点赞与分享，
-    // 两个入口行为不一致才都撤了），别再往回加。
+    // 气泡里现在是"评论 + 分享"两项：点赞走右下角常驻按钮，别往回加。
   });
 }
 
