@@ -652,7 +652,16 @@ body[data-page="post"] .cbar.show { margin-top: 16px; border-top: 0; }
   /* 封面按比例收窄，避免未滚动时第一条内容完全看不见；昵称/签名/头像间距随动。
      高度不跟 19:7 走，所以这里是「第三种槽位几何」：19:7 的图在此框内会被横向切掉
      约 40% 宽度，具体数字与影响见上方封面区块的注释。 */
-  .cover { height: 230px; }
+  /* 移动端：封面吸顶固定当底层，feed 从它上面滑过（feed 需要更高层级和不透明底）。
+     滚动进度驱动的虚化在 feed.js（blur 会带出边缘，配合 JS 里的轻微放大遮边）。 */
+  .cover { position: sticky; top: 0; height: 230px; }
+  .cover .cover-img { will-change: filter, transform; }
+  .feed { position: relative; z-index: 10; background: #fff; }
+  /* 头像/签名从封面下沿探进内容区，不能被提层后的 feed 盖住（cover 自身无 z-index，
+     它们作为其定位后代直接参与外层比较，11 > feed 的 10 即可） */
+  .cover .cover-avatar-wrap, .cover .cover-sign { z-index: 11; }
+  /* 导航的毛玻璃渐隐层叠在吸顶封面上像一圈内阴影，移动端去掉（导航文字保留） */
+  .nav::before { display: none; }
   .cover .cover-name, .cover .cover-sign { right: 92px; }
   .cover .cover-avatar-wrap { right: 14px; width: 60px; height: 60px; }
 }
