@@ -11,6 +11,10 @@ data/images/
 # 缺这一行的话 `git add -A` 会把它顺手带进公开仓库（data/ 目录本身没被整目录忽略）。
 data/baidu-push.json
 
+# 后台口令本地兜底文件（{user, passHash}）：本地开发用的运行时凭据，同样绝不入库。
+# 线上不经此文件——改由 systemd EnvironmentFile（服务器 /etc/blog/blog.env）注入。
+data/admin-creds.json
+
 # 改动前的手工快照（放在项目外，这里只是双保险）
 .backup-*/
 

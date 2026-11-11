@@ -31,14 +31,29 @@ PORT=3000 HOST=127.0.0.1 node server.js
 
 ## 后台口令
 
-`server.js` 顶部 `ADMIN_USER` / `ADMIN_PASS_HASH`。改口令：
+凭据**不写在源码里**（仓库历史上是公开的，源码内的哈希一旦提交就无法从 git 历史收回），运行时按优先级注入：
+
+1. **线上**：systemd drop-in 的 `EnvironmentFile=/etc/blog/blog.env`（`root:root 0600`）提供
+   `ADMIN_USER` / `ADMIN_PASS_HASH`。systemd 以 root 读该文件，`blog` 进程用户不需要文件读权限。
+2. **本地开发**：读 gitignored 的 `data/admin-creds.json`（`{ "user": "...", "passHash": "..." }`）。
+
+两者都没有时后台**拒绝一切登录**（fail closed），不会退回任何内置兜底口令。
+
+口令哈希用 **scrypt**（内存硬核 KDF，`N=16384,r=8,p=1`，每条随机盐），存储格式：
+`scrypt$N$r$p$<saltHex>$<hashHex>`，填进 `ADMIN_PASS_HASH`。**旧的固定盐单轮 sha256 已彻底停用**——
+`verifyAdminPass()` 只认 scrypt 串，历史里那个泄露的 sha256 哈希即使被离线跑出来也无法登录。
+
+生成一条新哈希（口令走 stdin，不进 argv / shell 历史；`read -s` 关闭回显）：
 
 ```bash
-node -e "console.log(require('crypto').createHash('sha256').update('tm-blog-salt:新密码').digest('hex'))"
+read -rs 'P; printf %s "$P"' | node server.js --hash-password; unset P
 ```
 
-把输出替换 `ADMIN_PASS_HASH` 并重启。会话存在进程内存，重启后后台需重新登录。
+把输出填入 `blog.env` 或 `data/admin-creds.json` 的 `ADMIN_PASS_HASH` 后重启服务。会话存在进程内存，重启后需重新登录。
 `/api/login` 有限流：同 IP+用户名 60 秒内累计 5 次失败锁 429。
+
+> ⚠️ 迁移只硬化了「今后如何存储与校验」，**没有**抹掉 git 历史里已泄露的旧口令哈希。若现口令偏弱
+> （短、常见），仍可能被离线字典跑出来——唯一彻底处置是**换成 20+ 位随机口令**并用上面的命令重新生成哈希。
 
 ## 前端约定
 

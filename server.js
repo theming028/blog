@@ -160,11 +160,59 @@ const SECURITY_HEADERS = {
 };
 
 /* ---------------- 后台鉴权 ----------------
- * 修改密码：node -e "console.log(require('crypto').createHash('sha256').update('tm-blog-salt:新密码').digest('hex'))"
- * 然后把结果替换到 ADMIN_PASS_HASH。
+ * 凭据不再写死在源码里：历史是公开仓库，源码里的口令哈希一旦提交就无法从 git 历史收回，
+ * 所以真实凭据一律在运行时注入，源码不落任何用户名/口令哈希。
+ *   - 线上：systemd drop-in 的 EnvironmentFile（/etc/blog/blog.env，root:root 0600）
+ *           提供 ADMIN_USER / ADMIN_PASS_HASH —— systemd 以 root 读该文件再把环境交给进程。
+ *   - 本地：gitignored 的 data/admin-creds.json（{ "user": "...", "passHash": "..." }）。
+ * 口令哈希采用 scrypt（内存硬核 KDF + 每值随机盐），取代原先「固定盐 tm-blog-salt: + 单轮 sha256」。
+ * 生成/更换口令哈希：read -rs 读口令 | node tools/hashpass.js（详见 README「后台口令」）。
+ * ADMIN_USER 或 ADMIN_PASS_HASH 任一为空即拒绝所有登录（fail closed）。
  */
-const ADMIN_USER = 'helloeddy';
-const ADMIN_PASS_HASH = 'f71be0e5d6493fc8ba50f7d855898d18adfadcd1cf4a8af911f399252b947a76';
+function loadAdminCreds() {
+  const envUser = (process.env.ADMIN_USER || '').trim();
+  const envHash = (process.env.ADMIN_PASS_HASH || '').trim();
+  if (envUser && envHash) return { user: envUser, passHash: envHash };
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'admin-creds.json'), 'utf8'));
+    return { user: (j.user || '').trim(), passHash: (j.passHash || '').trim() };
+  } catch (e) {
+    return { user: envUser, passHash: envHash };
+  }
+}
+
+// scrypt 口令哈希格式：scrypt$N$r$p$<saltHex>$<hashHex>
+const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 32, saltlen: 16 };
+function scryptDerive(password, saltBuf, N, r, p, keylen) {
+  return crypto.scryptSync(password, saltBuf, keylen, { N, r, p, maxmem: 256 * 1024 * 1024 });
+}
+// 给口令生成一条可直接落 ADMIN_PASS_HASH 的 scrypt 串（随机盐）
+function formatScrypt(password) {
+  const salt = crypto.randomBytes(SCRYPT.saltlen);
+  const dk = scryptDerive(password, salt, SCRYPT.N, SCRYPT.r, SCRYPT.p, SCRYPT.keylen);
+  return `scrypt$${SCRYPT.N}$${SCRYPT.r}$${SCRYPT.p}$${salt.toString('hex')}$${dk.toString('hex')}`;
+}
+// 只接受 scrypt 格式；旧 fixed-salt sha256 哈希一律判失败（升级即失效，不保留后门）
+function verifyAdminPass(password) {
+  if (!ADMIN_USER || !ADMIN_PASS_HASH) return false;
+  const parts = String(ADMIN_PASS_HASH).split('$');
+  if (parts.length !== 6 || parts[0] !== 'scrypt') return false;
+  const N = parseInt(parts[1], 10), r = parseInt(parts[2], 10), p = parseInt(parts[3], 10);
+  const saltHex = parts[4], wantHex = parts[5];
+  if (!N || !r || !p || !saltHex || !wantHex) return false;
+  let salt, want;
+  try { salt = Buffer.from(saltHex, 'hex'); want = Buffer.from(wantHex, 'hex'); }
+  catch (e) { return false; }
+  if (!salt.length || !want.length || want.length % 2) return false;
+  let got;
+  try { got = scryptDerive(String(password), salt, N, r, p, want.length); }
+  catch (e) { return false; }
+  return got.length === want.length && crypto.timingSafeEqual(got, want);
+}
+
+const ADMIN_CREDS = loadAdminCreds();
+const ADMIN_USER = ADMIN_CREDS.user;
+const ADMIN_PASS_HASH = ADMIN_CREDS.passHash;
 const SESSION_TTL = 7 * 24 * 3600 * 1000; // 7 天，滑动续期
 const sessions = new Map(); // token -> expireAt
 
@@ -256,10 +304,6 @@ const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
  * 代价是拿到代码的人可以离线验证某个 IP 是否访问过（访客量级的小博客可接受）。 */
 const VISITOR_SALT = 'tm-blog-visitor-salt';
 const visitorHash = (ip) => sha256(VISITOR_SALT + ':' + ip).slice(0, 32);
-const hashEq = (a, b) => {
-  const ba = Buffer.from(a, 'hex'), bb = Buffer.from(b, 'hex');
-  return ba.length === bb.length && crypto.timingSafeEqual(ba, bb);
-};
 function parseCookies(req) {
   const out = {};
   (req.headers.cookie || '').split(';').forEach((kv) => {
@@ -651,7 +695,7 @@ async function handleApi(req, res, pathname, query) {
       res.writeHead(429, { 'Retry-After': String(wait), 'Content-Type': 'application/json; charset=utf-8', ...SECURITY_HEADERS });
       return res.end(JSON.stringify({ error: `失败次数过多，请 ${wait} 秒后重试` }));
     }
-    const ok = user === ADMIN_USER && hashEq(sha256('tm-blog-salt:' + String(b.pass || '')), ADMIN_PASS_HASH);
+    const ok = !!ADMIN_USER && user === ADMIN_USER && verifyAdminPass(String(b.pass || ''));
     if (!ok) {
       noteLoginFail(key);
       return sendError(res, 401, '用户名或密码错误');
@@ -1208,6 +1252,22 @@ async function bootstrap() {
 }
 
 const HOST = process.env.HOST || '0.0.0.0';
+
+// 口令哈希生成器：node server.js --hash-password   从标准输入读一行口令（口令不进 argv、不进 shell 历史），
+// 打印一行可直接填入 ADMIN_PASS_HASH 的 scrypt 串。迁移/改口令用，不启动服务。
+if (process.argv[2] === '--hash-password') {
+  let __pw = '';
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', (d) => { __pw += d; });
+  process.stdin.on('end', () => {
+    __pw = __pw.replace(/\r?\n$/, '');
+    if (!__pw) { console.error('未读到口令'); process.exit(2); }
+    console.log(formatScrypt(__pw));
+    process.exit(0);
+  });
+  return;
+}
+
 server.listen(PORT, HOST, () => {
   console.log(`朋友圈风格个人博客已启动: http://localhost:${PORT}`);
   console.log(`管理后台: http://localhost:${PORT}/admin`);
