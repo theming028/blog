@@ -22,8 +22,12 @@ body {
      注意：admin.css 的 --adm-muted 恰好同值但底色只有白，不跟着这次改动走。 */
   --wx-sub: #676D73;
   --wx-box: #F7F7F7;
-  --wx-bg: #f0f0f0;   /* 页面灰底唯一来源：body 与页脚的 .license/.blogroll 共用，改这一处三边同步 */
+  --wx-bg: #f0f0f0;   /* 页面灰底：body 用；页脚 .foot 的毛玻璃在老内核不支持时回退到它 */
   --wx-line: #E7E7E7;
+  /* 页脚毛玻璃专用分隔线：旧值 --wx-line(#E7E7E7) 是给不透明灰底调的，在 .foot 半透明磨砂上
+     几乎和背景融在一起、看不出。这里改用更深的半透明黑线，压在浅磨砂底上对比足够、又不至于生硬。
+     两处 .license / .foot-line 的分隔线共用它。 */
+  --foot-line: rgba(0, 0, 0, 0.05);
   --wx-green: #07C160;
   --wx-red: #FA5151;
   --phone-w: 800px;    /* 版面宽度唯一来源：.phone 与 .nav 都引用它，避免两处各写一份而走偏 */
@@ -43,9 +47,14 @@ input, textarea, select { font-family: inherit; }
 .phone {
   max-width: var(--phone-w);
   margin: 0 auto;
+  background: transparent;   /* 白底上移到 .phone-body，让页脚 .foot 背后透出 fixed 花园 */
+  position: relative;
+}
+/* 白底正文列：承载原来的 .phone 白底与整屏最小高，使白底只覆盖正文、不覆盖页脚 */
+.phone-body {
+  background: #fff;
   min-height: 100vh;      /* 不支持 dvh 的旧内核兜底 */
   min-height: 100dvh;     /* 移动浏览器地址栏收放后真实可见高度，避免底部内容被遮 */
-  background: #fff;
   position: relative;
 }
 
@@ -463,16 +472,38 @@ body[data-page="post"] .cbar.show { margin-top: 16px; border-top: 0; }
 #mulepage-footer, .mulepage-footer { display: none !important; }
 .loading { text-align: center; color: var(--wx-gray); font-size: 13px; padding: 40px 0; }
 
+/* ============ 页脚（真·透明毛玻璃）============ */
+/* 三个页脚模块合并进单个 .foot。白底已从 .phone 上移到 .phone-body，.foot 现在是透明正文列里、
+   白列之下的唯一一层，背后就是 fixed 的 #garden-bg（花园 / 轮换照片）。于是 backdrop-filter 模糊的是
+   真正的背景，而非纯白——这才是「真透」，不再靠自带底图 filter:blur() 模拟。
+   可调旋钮只有一个：.foot 背景 rgba 的 alpha（磨砂浓淡 / 文字可读性）；模糊半径在 backdrop-filter 里。
+   对比度兜底：alpha .5 + blur 16px 下，浅底区域仍足够让 --wx-sub 小字读清；窄屏没有花园时退回不透明灰。 */
+.foot {
+  position: relative;
+  z-index: 1;                                   /* 压在 fixed 花园(z-index:0)之上，保证可见 */
+  padding: 8px 0 0;                             /* 顶部留白：玻璃带上缘不贴死白列 */
+  background: rgba(240, 240, 240, 0.9);        /* 半透明磨砂：让花园透出 */
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  backdrop-filter: blur(16px) saturate(160%);
+}
+/* .foot 的第一块子模块（网上邻居隐藏时是 .license）自带 border-top，正好作白列→玻璃带的分隔 */
+.foot > * { position: relative; z-index: 1; }
+/* 老内核不支持毛玻璃：退回原来的不透明灰底，观感不回退 */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .foot { background: var(--wx-bg); }
+}
+/* 窄屏：花园本是桌面元素，透明页脚会糊在移动端可读性差 → 退回不透明浅灰、去毛玻璃 */
+@media (max-width: 719.98px) {
+  .foot { background: var(--wx-bg); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+
 /* 页脚最后一行：版权 + ICP 备案号，一行两列、中间隔 16px，与上面的 license 模块用一条横线分隔。
-   必须留在 .phone 之内并自带灰底：#garden-bg 是 position:fixed + z-index:0，按 CSS 绘制顺序
-   会盖住同层叠上下文里「非定位的后继块级内容」——上一版这两项放在 .phone 之外，被花园的天空
-   与草地整个糊住、肉眼完全看不见（不是对比度问题，是没轮到它们画在上面）。
-   「你是第 N 位访客」按邵先生要求移除；后台「访客记录」走另一套 /api/track/*，与此无关。 */
+   背景已上收到 .foot，这里只保留与上一模块的分隔线（border-top）。 */
 .foot-line {
   display: flex; align-items: baseline; justify-content: center; gap: 16px;
   flex-wrap: wrap;                 /* 窄屏挤不下就换行，绝不溢出 */
   padding: 14px 16px 18px;
-  background: var(--wx-bg); border-top: .5px solid var(--wx-line);
+  border-top: 1px solid var(--foot-line);
   color: var(--wx-sub); font-size: 12px; line-height: 1.8;
 }
 /* 版权行不许折行：折一次就会把「© 2026」和「朝夕光年」拆成两截，右边距也跟着错位 */
@@ -488,12 +519,12 @@ body[data-page="post"] .cbar.show { margin-top: 16px; border-top: 0; }
 /* 版权（CC 授权条款）提醒：与 .blogroll 同属灰底页脚带，用自身上边框把它们分开——
    分隔线必须挂在提醒上而不是挂在邻居上，因为网上邻居没有链接时会整块隐藏，
    线挂它身上就会剩一条悬空的线。（两者位置互换过一次，边框方向跟着从 bottom 改成 top。） */
-.license { padding: 20px 24px 22px; background: var(--wx-bg); border-top: .5px solid var(--wx-line); }
+.license { padding: 20px 24px 22px; border-top: 1px solid var(--foot-line); }
 .license-text { font-size: 12px; line-height: 1.5; color: var(--wx-sub); word-break: break-word; }
 /* 授权标识单独一行：条款正文是散文，混在末尾读起来像第四条条款。
    全局 * { margin: 0 } 把 p 的默认间距清掉了，所以行距要显式给。 */
 .license-id { margin-top: 6px; }
-.blogroll { padding: 24px; background: var(--wx-bg); }
+.blogroll { padding: 24px; }
 .blogroll-title { font-size: 13px; color: var(--wx-sub); margin-bottom: 12px; letter-spacing: .5px; text-align: center; }
 /* 这里是 flex 容器，光写 text-align 居中不了子项，必须 justify-content: center */
 .blogroll-list { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; text-align: center; }

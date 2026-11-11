@@ -31,6 +31,8 @@
   </div>
 </div>
 <div class="phone">
+  <!-- 白底正文层：花园/照片被 .phone 让出，改由这一层承载白底，页脚 .foot 留在它之外才能真正透明 -->
+  <div class="phone-body">
 
   <!-- 顶部导航 -->
   <div class="nav">
@@ -65,29 +67,31 @@
   <!-- 分页页码 -->
   <div class="pager" id="pager" style="display:none"></div>
 
-  <!-- 网上邻居（友情链接） -->
-  <div class="blogroll" id="blogroll" style="display:none">
-    <div class="blogroll-title">网上邻居</div>
-    <div class="blogroll-list" id="blogrollList"></div>
-  </div>
+  </div><!-- /.phone-body：白底正文到此结束；下面的 .foot 不在这层白底内，才能真正透出花园 -->
 
-  <!-- 版权（CC 授权条款）提醒：纯文字，展示在网上邻居之下。
-       与网上邻居共用灰底页脚带，靠自身上边框分隔两者——分隔线必须挂在这个始终显示的
-       模块上，因为网上邻居在没有友链时会整块隐藏，线挂它身上就会剩一条悬空的线。 -->
-  <div class="license">
-    <p class="license-text">Attribution: You must attribute the work in the manner specified by the author or licensor (but not in any way that suggests that they endorse you or your use of the work). Noncommercial: You may not use this work for commercial purposes. Share Alike: If you alter, transform, or build upon this work, you may distribute the resulting work only under the same or similar license to this one.</p>
-    <p class="license-text license-id">License: CC BY-NC-SA 4.0</p>
-  </div>
-  <!-- 版权 + ICP 备案号：一行两列、中间隔 16px，与上面的 license 模块用一条横线分隔。
-       必须留在 .phone 之内并自带灰底：#garden-bg 是 position:fixed + z-index:0，按 CSS
-       绘制顺序会盖在「同层叠上下文里非定位的后继块级内容」之上——上一版这三行放在 .phone
-       之外，被花园的天空与草地整个糊住、肉眼完全看不见（不是对比度问题，是没轮到它们画在上面）。
-       备案号仍排在 #copyright 之后：feed.js 用 textContent 写 #copyright，
-       把它塞进同一个节点里每次渲染都会被吞掉。
-       「你是第 N 位访客」按邵先生要求撤掉了；后台「访客记录」走另一套 /api/track/*，不受影响。 -->
-  <div class="foot-line">
-    <span class="copyright" id="copyright"></span>
-    <span class="icp"><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">蜀ICP备2022004138号-2</a></span>
+  <!-- 页脚：网上邻居 + 版权提醒 + 版权/备案号，合并进同一个 .foot 容器。
+       .foot 是 .phone 的直接子元素、位于白底 .phone-body 之后，所以它背后是 fixed 的花园
+       而非白底 → backdrop-filter 能真正模糊花园，形成透明毛玻璃（不再是自带底图的模拟）。
+       .foot 自带 position:relative + z-index:1，压住 fixed 的 #garden-bg(z-index:0) 保证可见。
+       块间分隔线仍挂在 .license / .foot-line 自身上边框上。 -->
+  <div class="foot">
+    <!-- 网上邻居（友情链接） -->
+    <div class="blogroll" id="blogroll" style="display:none">
+      <div class="blogroll-title">网上邻居</div>
+      <div class="blogroll-list" id="blogrollList"></div>
+    </div>
+
+    <!-- 版权（CC 授权条款）提醒 -->
+    <div class="license">
+      <p class="license-text">Attribution: You must attribute the work in the manner specified by the author or licensor (but not in any way that suggests that they endorse you or your use of the work). Noncommercial: You may not use this work for commercial purposes. Share Alike: If you alter, transform, or build upon this work, you may distribute the resulting work only under the same or similar license to this one.</p>
+      <p class="license-text license-id">License: CC BY-NC-SA 4.0</p>
+    </div>
+    <!-- 版权 + ICP 备案号：一行两列。备案号仍排在 #copyright 之后：feed.js 用 textContent
+         写 #copyright，把它塞进同一个节点里每次渲染都会被吞掉。 -->
+    <div class="foot-line">
+      <span class="copyright" id="copyright"></span>
+      <span class="icp"><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">蜀ICP备2022004138号-2</a></span>
+    </div>
   </div>
 </div>
 
