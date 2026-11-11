@@ -477,7 +477,9 @@ body[data-page="post"] .cbar.show { margin-top: 16px; border-top: 0; }
    白列之下的唯一一层，背后就是 fixed 的 #garden-bg（花园 / 轮换照片）。于是 backdrop-filter 模糊的是
    真正的背景，而非纯白——这才是「真透」，不再靠自带底图 filter:blur() 模拟。
    可调旋钮只有一个：.foot 背景 rgba 的 alpha（磨砂浓淡 / 文字可读性）；模糊半径在 backdrop-filter 里。
-   对比度兜底：alpha .5 + blur 16px 下，浅底区域仍足够让 --wx-sub 小字读清；窄屏没有花园时退回不透明灰。 */
+    对比度兜底：alpha .9 + blur 16px 下，小字仍足够读清；老内核不支持毛玻璃时退回不透明灰。
+    注意：#garden-bg 是 position:fixed 且无 viewport 门控，rotateBg() 也无视口判断，
+    故移动端背后同样是真实花园/照片，毛玻璃在移动端一并生效——切勿再按「窄屏退回不透明灰」禁用它。 */
 .foot {
   position: relative;
   z-index: 1;                                   /* 压在 fixed 花园(z-index:0)之上，保证可见 */
@@ -491,10 +493,6 @@ body[data-page="post"] .cbar.show { margin-top: 16px; border-top: 0; }
 /* 老内核不支持毛玻璃：退回原来的不透明灰底，观感不回退 */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .foot { background: var(--wx-bg); }
-}
-/* 窄屏：花园本是桌面元素，透明页脚会糊在移动端可读性差 → 退回不透明浅灰、去毛玻璃 */
-@media (max-width: 719.98px) {
-  .foot { background: var(--wx-bg); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 
 /* 页脚最后一行：版权 + ICP 备案号，一行两列、中间隔 16px，与上面的 license 模块用一条横线分隔。

@@ -9,7 +9,11 @@
    2) 仅日间：博客没有暗色主题，--night 素材与暗色规则全部不取；
    3) 铺满视口：原站是内缩圆角面板，这里改为 position:fixed 铺满整个视口，
    作为 760px 内容列的页面背景（内容列不透明白，花园只在两侧留白露出）；
-   4) 仅桌面：@media (min-width: 720px) 打开，窄屏不渲染不下载。
+    4) 全端渲染：#garden-bg 为 position:fixed 铺满视口，代码里并无 viewport 门控，
+    rotateBg() 也无视口判断，故移动端同样渲染并下载背景照片（窄屏时被 .phone-body
+    白底盖住正文，仅在页脚 .foot 之下透出供毛玻璃模糊）。历史上"仅桌面/窄屏不下载"的
+    说法与实现不符，已按实际纠正——别再据此在窄屏禁用 .foot 的 backdrop-filter。
+
 
    层叠（z-index，逐个核对）：#garden-bg 0（最远）< .phone（白列，z-auto，
    DOM 在花园之后所以压住它）< #snow/#blossom 5（飘落层）< 雪堆积层 6
