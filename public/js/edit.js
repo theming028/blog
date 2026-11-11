@@ -23,9 +23,7 @@ function renderPhotos() {
       <img src="/api/images/${encodeURIComponent(id)}" alt="">
       <div class="ph-del" title="移除">×</div>
     </div>`).join('');
-  if (images.length < 9) {
-    box.insertAdjacentHTML('beforeend', '<div class="adm-add" id="eAdd">+<span>添加</span></div>');
-  }
+  box.insertAdjacentHTML('beforeend', '<div class="adm-add" id="eAdd">+<span>添加</span></div>');
 }
 
 $('#ePhotos').addEventListener('click', (e) => {
@@ -44,9 +42,9 @@ $('#fileInput').addEventListener('change', async (e) => {
   e.target.value = '';
   if (!files.length) return;
   try {
-    for (let i = 0; i < list.length; i++) {
-      $('#eUp').textContent = `正在上传第 ${i + 1}/${list.length} 张…`;
-      const r = await uploadImageFile(list[i]);
+    for (let i = 0; i < files.length; i++) {
+      $('#eUp').textContent = `正在上传第 ${i + 1}/${files.length} 张…`;
+      const r = await uploadImageFile(files[i]);
       images.push(r.id);
       renderPhotos();
     }
