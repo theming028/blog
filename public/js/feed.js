@@ -772,6 +772,28 @@ async function checkAdmin() {
  * 服务端路由先留着：后台「访客记录」走的是 /api/track/* 那一套，与此无关，
  * 少一个调用点不等于要动接口；真要清接口时再一起清 lib/visit.js 与 visitors 表。 */
 
+/* ---------- 移动端封面：吸顶 + 滚动虚化 ---------- */
+/* 仅移动端断点（与 wx.css 的 480px 一致）生效：封面 sticky 吸顶后，内容从它底下滚过；
+   滚动进度 0→封面高度 映射到 blur 0→12px，附带 25% 压暗，滚回顶部即完全复原。
+   blur 会把图片边缘“喝”进去露出 .cover 的深色底（#26282B），在顶边形成一圈
+   类似内阴影的暗晕——放大比例必须盖过 blur 半径（12/115≈10.4%，取 15% 留余量）。
+   rAF 节流：scroll 事件一帧最多算一次，passive 不阻塞滚动本身。 */
+(function coverBlur() {
+  if (!matchMedia('(max-width: 480px)').matches) return;
+  const img = document.querySelector('.cover .cover-img');
+  if (!img) return;
+  const RANGE = 230, MAX_BLUR = 12;
+  let ticking = false;
+  function update() {
+    ticking = false;
+    const k = Math.min(window.scrollY || 0, RANGE) / RANGE;
+    if (k <= 0) { img.style.filter = ''; img.style.transform = ''; return; }
+    img.style.filter = `blur(${(k * MAX_BLUR).toFixed(1)}px) brightness(${(1 - k * 0.25).toFixed(2)})`;
+    img.style.transform = `scale(${(1 + k * 0.15).toFixed(3)})`;
+  }
+  addEventListener('scroll', () => { if (!ticking) { ticking = true; requestAnimationFrame(update); } }, { passive: true });
+})();
+
 /* ---------- 启动 ---------- */
 /* 把一份 settings 应用到页面上。拆出来是因为 SSR 的首屏数据里已经带了 settings
    （见 bootData 分支），再拉一次 /api/settings 就是白等一个来回；
