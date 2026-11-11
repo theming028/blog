@@ -778,18 +778,40 @@ async function checkAdmin() {
    blur 会把图片边缘“喝”进去露出 .cover 的深色底（#26282B），在顶边形成一圈
    类似内阴影的暗晕——放大比例必须盖过 blur 半径（12/115≈10.4%，取 15% 留余量）。
    rAF 节流：scroll 事件一帧最多算一次，passive 不阻塞滚动本身。 */
+/* 移动端：sticky 的 .cover 自成堆叠上下文，探出封面下沿的头像/签名在它内部
+   无论 z-index 多高都压不过提层后的 feed。挪到 body 下用 fixed 钉在封面下沿
+   （封面 sticky top:0，其下沿恒在视口 230px 处，钉位才成立）；
+   桌面端不动，两者仍由 .cover 绝对定位。
+   必须先于 coverBlur 执行：后者的渐隐要按 .cover-float 收集元素。 */
+(function coverFloat() {
+  if (!matchMedia('(max-width: 480px)').matches) return;
+  for (const sel of ['.cover-avatar-wrap', '.cover-sign']) {
+    const el = document.querySelector(sel);
+    if (el) { el.classList.add('cover-float'); document.body.appendChild(el); }
+  }
+})();
+
 (function coverBlur() {
   if (!matchMedia('(max-width: 480px)').matches) return;
   const img = document.querySelector('.cover .cover-img');
   if (!img) return;
   const RANGE = 230, MAX_BLUR = 12;
+  /* 挪出 .cover 的头像/签名（coverFloat）是 fixed 钉死的，不跟着滚会一直杵在
+     封面下沿——与封面同样按滚动进度渐隐，滚过一屏封面高度即完全消失 */
+  const floats = document.querySelectorAll('.cover-float');
   let ticking = false;
   function update() {
     ticking = false;
     const k = Math.min(window.scrollY || 0, RANGE) / RANGE;
-    if (k <= 0) { img.style.filter = ''; img.style.transform = ''; return; }
+    if (k <= 0) {
+      img.style.filter = ''; img.style.transform = '';
+      floats.forEach((el) => { el.style.opacity = ''; });
+      return;
+    }
     img.style.filter = `blur(${(k * MAX_BLUR).toFixed(1)}px) brightness(${(1 - k * 0.25).toFixed(2)})`;
     img.style.transform = `scale(${(1 + k * 0.15).toFixed(3)})`;
+    /* 渐隐速度是封面虚化的 4 倍：滚过 57.5px 就完全消失 */
+    floats.forEach((el) => { el.style.opacity = Math.max(1 - k * 4, 0).toFixed(2); });
   }
   addEventListener('scroll', () => { if (!ticking) { ticking = true; requestAnimationFrame(update); } }, { passive: true });
 })();
