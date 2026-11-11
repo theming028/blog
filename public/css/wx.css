@@ -139,7 +139,9 @@ input, textarea, select { font-family: inherit; }
   position: absolute; right: 24px; bottom: -34px;
   width: 68px; height: 68px;
 }
-.cover .cover-avatar {
+/* .cover-float：移动端头像/签名被挪出 .cover（feed.js），选择器要带上它们，
+   否则内层图会丢掉尺寸/圆角/白边按原始大小渲染 */
+.cover .cover-avatar, .cover-float .cover-avatar {
   position: absolute; inset: 0;
   width: 100%; height: 100%; border-radius: 6px;
   border: 2px solid #fff; object-fit: cover; background: #fff;
@@ -147,7 +149,7 @@ input, textarea, select { font-family: inherit; }
 /* 积雪：完整的 snow.png 原图（三条雪堆 + 小树，200×36）。四个参数为邵先生给定值：
    与头像同宽（width:100%）、整体左移 4%、下沿压进头像框 7px。高度不声明，
    img 默认 auto，按 200:36 随宽度缩放（桌面 68px 宽 → 约 12px 高，移动端 60px → 约 11px）。 */
-.cover .cover-snow {
+.cover .cover-snow, .cover-float .cover-snow {
   position: absolute;
   left: -4%;
   width: 100%;
@@ -655,11 +657,25 @@ body[data-page="post"] .cbar.show { margin-top: 16px; border-top: 0; }
   /* 移动端：封面吸顶固定当底层，feed 从它上面滑过（feed 需要更高层级和不透明底）。
      滚动进度驱动的虚化在 feed.js（blur 会带出边缘，配合 JS 里的轻微放大遮边）。 */
   .cover { position: sticky; top: 0; height: 230px; }
+  /* 虚化时图片 scale 放大会溢出视口、把布局视口撑宽（实测 405>390），
+     拖累 fixed 查看器的居中基准——横向裁掉，纵向不影响探出的头像/签名 */
+  .cover { overflow-x: clip; }
   .cover .cover-img { will-change: filter, transform; }
   .feed { position: relative; z-index: 10; background: #fff; }
-  /* 头像/签名从封面下沿探进内容区，不能被提层后的 feed 盖住（cover 自身无 z-index，
-     它们作为其定位后代直接参与外层比较，11 > feed 的 10 即可） */
-  .cover .cover-avatar-wrap, .cover .cover-sign { z-index: 11; }
+  /* sticky 的 .cover 自成堆叠上下文，其内部子元素的 z-index 出不来（11 压不过
+     feed 的 10），头像/签名在移动端由 feed.js 挪到 body 下、fixed 钉在封面下沿 */
+  .cover-float.cover-avatar-wrap {
+    position: fixed; z-index: 20;
+    top: calc(230px + env(safe-area-inset-top) + 34px);  /* 原 bottom:-34 的等效钉位 */
+    right: 14px; width: 60px; height: 60px;
+    transform: translateY(-100%);
+  }
+  .cover-float.cover-sign {
+    position: fixed; z-index: 20;
+    top: calc(230px + env(safe-area-inset-top) + 24px);  /* 原 bottom:-24 的等效钉位 */
+    right: 92px;
+    transform: translateY(-100%);
+  }
   /* 导航的毛玻璃渐隐层叠在吸顶封面上像一圈内阴影，移动端去掉（导航文字保留） */
   .nav::before { display: none; }
   .cover .cover-name, .cover .cover-sign { right: 92px; }
