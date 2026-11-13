@@ -159,7 +159,6 @@ function mediaToSave(strict) {
 function collect() {
   return {
     content: $('#eText').value.trim(),
-    location: $('#eLoc').value.trim(),
     images,
   };
 }
@@ -219,7 +218,6 @@ $('#btnDelete').addEventListener('click', async () => {
   try {
     const r = await api(`/api/posts/${encodeURIComponent(editId)}`);
     $('#eText').value = r.post.content || '';
-    $('#eLoc').value = r.post.location || '';
     images = [...(r.post.images || [])];
     // 老数据没有 media 字段（音视频是后加的），缺字段当空数组处理，不能让编辑页白屏
     media = (Array.isArray(r.post.media) ? r.post.media : []).map((m) => ({
