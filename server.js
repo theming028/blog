@@ -1156,6 +1156,22 @@ const server = http.createServer(async (req, res) => {
     return res.end(seo.sitemapXml(entries));
   }
 
+  /* RSS 订阅：与 sitemap 同一域名策略（拿不到可信域名就 503），取最近 50 条已发布帖子 */
+  if (pathname === '/rss.xml' || pathname === '/feed') {
+    const base = seo.siteBase(req);
+    if (!base) {
+      res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8', ...SECURITY_HEADERS });
+      return res.end('RSS unavailable');
+    }
+    const posts = await store.listPosts(false);
+    const settings = await store.getSettings();
+    res.writeHead(200, { 'Content-Type': 'application/rss+xml; charset=utf-8', 'Cache-Control': 'no-cache', ...SECURITY_HEADERS });
+    return res.end(seo.rssXml({
+      base, siteName: settings.nickname || '朝夕光年',
+      description: settings.sign || '', posts,
+    }));
+  }
+
   const detail = /^\/p\/([\w-]+)\/?$/.exec(pathname);
 
   // 静态资源
