@@ -514,6 +514,30 @@ body[data-page="post"] .cbar.show { margin-top: 16px; border-top: 0; }
    否则在灰底小字里它和左边的版权看不出是可点的。 */
 .icp a { color: var(--wx-blue); text-decoration: underline; text-underline-offset: 2px; }
 .icp a:hover { color: var(--wx-blue-deep); }
+/* RSS 订阅链接：与备案号同款样式（同一行、同字号），下划线同理显式补 */
+.rss-link { color: var(--wx-blue); font-size: 12px; text-decoration: underline; text-underline-offset: 2px; white-space: nowrap; }
+.rss-link:hover { color: var(--wx-blue-deep); }
+
+/* ============ 回到顶部悬浮按钮 ============ */
+/* common.js 动态插入（全站生效）。右下角固定：右上角是音乐悬浮球、底部居中是 toast。
+   灰白圆钮 + 浅描边，微信式克制配色；滚过 480px 才 show（淡入 + 轻微上移）。 */
+.to-top {
+  position: fixed; right: 16px; bottom: calc(24px + env(safe-area-inset-bottom));
+  width: 40px; height: 40px; border-radius: 50%; padding: 0;
+  /* 毛玻璃：与顶部导航同一手法，-webkit- 前缀给旧版 Safari；
+     半透明白底让底下内容（含花园背景）透出来 */
+  background: rgba(255, 255, 255, .55);
+  -webkit-backdrop-filter: blur(12px) saturate(160%); backdrop-filter: blur(12px) saturate(160%);
+  border: .5px solid rgba(255, 255, 255, .6);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .12);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; z-index: 90;   /* 高于内容列与飘雪(5/6)，低于 toast 260 / viewer 300 */
+  opacity: 0; visibility: hidden; transform: translateY(8px);
+  transition: opacity .22s ease, transform .22s ease, visibility .22s ease;
+}
+.to-top.show { opacity: 1; visibility: visible; transform: none; }
+.to-top svg { width: 20px; height: 20px; fill: #666; }
+.to-top:active { background: rgba(255, 255, 255, .75); }
 
 /* 网上邻居（友情链接）— 纯文字链接，无分割线；用页面灰底而非 .phone 的白底 */
 /* 版权（CC 授权条款）提醒：与 .blogroll 同属灰底页脚带，用自身上边框把它们分开——
