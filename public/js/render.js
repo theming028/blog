@@ -108,16 +108,18 @@ function renderPost(p, ctx) {
       `<img src="${imgUrl(im)}" data-pid="${p.id}" data-idx="${i}" loading="lazy" decoding="async" alt="">`).join('') + '</div>';
   }
 
-  const locHtml = p.location
-    ? `<div class="p-location">${ICON_PIN}${esc(p.location)}</div>` : '';
+  /* 位置功能已整体下线：帖子不再渲染地址（历史数据里的 location 仅存于库中、不再展示） */
 
-  /* 详情页：头像、昵称、时间（连同位置）包进 .p-head 一个整体，正文在它下面——
-     头像必须一起包进去，否则它比文字行高，正文会被头像底部"压"住。
-     信息流保持原布局，时间仍在 .p-foot 里。 */
+  /* 详情页与信息流统一：头像、昵称、时间都包进 .p-head 一个整体容器，
+     正文（.p-body）从它下面开始（间距由 .p-head 的 margin-bottom 给出）。
+     信息流的时间用移动端专用副本 .p-time-head（桌面隐藏、桌面时间仍在 .p-foot 底部）；
+     桌面信息流的旧几何（正文从头像右缘 54px 起、首行落在昵称之下）由
+     .post-feed 的三条桌面规则还原，见 wx.css。 */
   const avImg = `<img class="p-avatar"${avAttr} alt="">`;
   const nameHtml = `<span class="p-name">${esc(ctx.nickname)}</span>`;
   const timeHtml = `<span class="p-time">${fmtTime(p.created_at, ctx.nowMs)}</span>`;
-  const headHtml = ctx.detail ? `<div class="p-head">${avImg}<div class="p-head-txt">${nameHtml}${timeHtml}${locHtml}</div></div>` : nameHtml;
+  const timeHeadHtml = `<span class="p-time p-time-head">${fmtTime(p.created_at, ctx.nowMs)}</span>`;
+  const headHtml = `<div class="p-head">${avImg}<div class="p-head-txt">${nameHtml}${ctx.detail ? timeHtml : timeHeadHtml}</div></div>`;
   const footTime = ctx.detail ? '' : timeHtml;
 
   /* 音视频：只播外链（本站不托管媒体文件），一条内容最多 3 段，排在图片之后。
@@ -162,14 +164,12 @@ function renderPost(p, ctx) {
     : '';
 
   return `
-  <div class="post" data-pid="${p.id}">
-    ${ctx.detail ? '' : avImg}
+  <div class="post${ctx.detail ? '' : ' post-feed'}" data-pid="${p.id}">
     <div class="p-body">
       ${headHtml}
       ${p.content ? `<div class="p-text">${esc(p.content)}</div>` : ''}
       ${imgHtml}
       ${mediaHtml}
-      ${ctx.detail ? '' : locHtml}
       <div class="p-foot">
         ${footTime}
         ${likeBtn}
