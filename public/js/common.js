@@ -161,13 +161,28 @@ async function uploadImageFile(file) {
   });
 })();
 
-/* 页面背景图轮换：每次刷新随机选取一张（含花园共 5 项），避免连续两次重复 */
+/* ---- 回到顶部悬浮按钮：滚过约一屏（480px）出现，全站生效（common 三个页面都加载）。
+     位置放右下角：右上角是可拖动的音乐悬浮球，底部居中是 toast——互不打架。 ---- */
+(function backToTop() {
+  const btn = document.createElement('button');
+  btn.className = 'to-top';
+  btn.type = 'button';
+  btn.setAttribute('aria-label', '回到顶部');
+  btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 5l-7 7 1.4 1.4L11 8.8V19h2V8.8l4.6 4.6L19 12z"/></svg>';
+  btn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+  document.body.appendChild(btn);
+  let ticking = false;
+  const update = () => { ticking = false; btn.classList.toggle('show', (window.scrollY || 0) > 480); };
+  window.addEventListener('scroll', () => { if (!ticking) { ticking = true; requestAnimationFrame(update); } }, { passive: true });
+  update();
+})();
+
+/* 页面背景图轮换：每次刷新随机选取一张（含花园共 4 项），避免连续两次重复 */
 (function rotateBg() {
   const BG_LIST = [
     'garden',
     '/assets/background-02.avif',
     '/assets/background-03.avif',
-    '/assets/background-04.avif',
   ];
   const last = sessionStorage.getItem('tm_bg_last');
   let idx = Math.floor(Math.random() * BG_LIST.length);
