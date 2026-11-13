@@ -167,10 +167,20 @@ input, textarea, select { font-family: inherit; }
 /* 详情页头部整体：头像/昵称/时间/位置包一行，正文从下一行开始（结构见 render.js 的 headHtml）。
    align-items:center 让头像与单行文字垂直居中；正文与头部间距由 margin-bottom 保证（≥16px）。 */
 .p-head { display: flex; align-items: center; margin-bottom: 16px; }
-/* 文字块纵向堆叠：昵称在上、时间（连同位置）在下 */
+/* 信息流（.post-feed，render.js 加的标记类）桌面版还原旧几何：
+   head 高度归零（头像溢出显示，不占行高），昵称绝对定位到头像右侧（x=54），
+   正文/图片/操作行整体缩进 54px、首行 margin-top 24px 落在昵称之下——
+   时间仍在 .p-foot 底部（.p-time-head 桌面隐藏）。
+   移动端由下方断点接管：头像/昵称/时间同容器、容器与正文间距 1em。 */
+.post-feed .p-head { position: relative; align-items: flex-start; margin-bottom: 0; height: 0; }
+.post-feed .p-head-txt { position: absolute; left: 54px; top: 0; max-width: calc(100% - 54px); }
+.post-feed .p-text, .post-feed .p-single, .post-feed .p-grid, .post-feed .p-full,
+.post-feed .p-audio, .post-feed .p-media-el,
+.post-feed .p-foot, .post-feed .acts { margin-left: 54px; }
+.post-feed .p-text { margin-top: 24px; }
+/* 文字块纵向堆叠：昵称在上、时间在下 */
 .p-head-txt { display: flex; flex-direction: column; align-items: flex-start; }
 .p-head-txt .p-name { margin-bottom: 0; }
-.p-head-txt .p-location { margin-top: 4px; }
 .p-text { font-size: var(--p-text-size); line-height: 1.55; color: var(--wx-text); white-space: pre-wrap; word-break: break-word; }
 
 .p-grid { margin-top: 8px; display: grid; gap: 5px; grid-template-columns: repeat(3, 1fr); }
@@ -207,11 +217,10 @@ video.p-media-el { aspect-ratio: 16 / 10; object-fit: contain; }
 .p-audio { margin-top: 8px; }
 .p-audio .p-media-el { background: none; }
 
-.p-location { display: inline-flex; align-items: center; gap: 3px; color: var(--wx-blue); font-size: 12px; margin-top: 8px; cursor: default; }
-.p-location svg { width: 12px; height: 12px; fill: var(--wx-blue); }
-
 .p-foot { display: flex; align-items: center; margin-top: 6px; min-height: 26px; position: relative; }
 .p-time { color: var(--wx-gray); font-size: 12px; }
+/* 信息流里昵称下的时间副本只给移动端；桌面时间仍在 .p-foot 底部（微信原样式） */
+.p-time-head { display: none; }
 .p-toggle {
   /* 推到右侧的活交给 .like-row 的 margin-left:auto（auto 只会吃掉它左边的空隙，
      留在谁身上就把谁推向一侧；之前留在这里导致点赞按钮被挤到最左） */
@@ -518,6 +527,10 @@ body[data-page="post"] .cbar.show { margin-top: 16px; border-top: 0; }
 .rss-link { color: var(--wx-blue); font-size: 12px; text-decoration: underline; text-underline-offset: 2px; white-space: nowrap; }
 .rss-link:hover { color: var(--wx-blue-deep); }
 
+/* 十年之约虫洞标识：foot-line 下方一行，居中对齐（官方代码原样内嵌，外层只管排版） */
+.forever { display: flex; justify-content: center; padding: 0 16px 18px; }
+.forever img { display: block; }
+
 /* ============ 回到顶部悬浮按钮 ============ */
 /* common.js 动态插入（全站生效）。右下角固定：右上角是音乐悬浮球、底部居中是 toast。
    灰白圆钮 + 浅描边，微信式克制配色；滚过 480px 才 show（淡入 + 轻微上移）。 */
@@ -647,28 +660,30 @@ body[data-page="post"] .cbar.show { margin-top: 16px; border-top: 0; }
   .feed { padding-top: calc(23px + env(safe-area-inset-top) / 2); }
   .p-name { font-size: 15px; }
   .acts { font-size: 15px; }
-  .p-time, .p-location { font-size: 13px; }
-  .p-location svg { width: 13px; height: 13px; }
+  .p-time { font-size: 13px; }
   /* ---- 正文拉通：375px 屏上"头像列 + 54px 缩进"要占掉 14% 的宽度，窄屏经不起。
-         做法是 .post 改成块级、头像绝对定位浮在左上角，.p-body 因此占满整条内容宽度；
-         只有头部三行（昵称/时间/位置）用 54px = 42px 头像 + 12px 间距 把自己缩进回去，
-         正文、图片、操作行、评论区天然就是拉通的，不需要负 margin 去挣脱。
-         .p-foot 用 display:contents 拆开，时间才能被 order 提到昵称下面与位置同行；
-         代价是它不再产生盒子（既当不了气泡锚点，也当不了 26px 行高），
-         锚点已交给 .p-toggle，行高用 margin-top: 8px 还原（6px 行距 + 居中余量 2px）。 ---- */
+          做法是 .post 改成块级，头像/昵称/时间包进 .p-head 容器（render.js 已统一），
+          容器与下方 .p-body 保持 1em 间距；正文、图片、操作行、评论区天然拉通。
+          .p-foot 用 display:contents 拆开（时间 DOM 已在 .p-head 里，见 render.js；
+          display:contents 只为让 foot 里其余行内件（点赞/···）正确拉通，
+          foot 本身不再产生盒子、当不了气泡锚点，锚点已交给 .p-toggle，
+          行高用 margin-top: 8px 还原（6px 行距 + 居中余量 2px）。 ---- */
   .post { display: block; position: relative; padding: 18px var(--post-pad-x); }
-  .p-avatar { position: absolute; left: var(--post-pad-x); top: 18px; margin-right: 0; }
   .p-body { display: flex; flex-wrap: wrap; align-items: center; }
   .p-foot { display: contents; }
-  /* 昵称独占一行（basis 100% 就是换行符），时间+位置落在它下面同一行，两者间隔 12px */
-  .p-name { flex: 1 1 100%; padding-left: 54px; }
-  /* 详情页 .p-head 整体缩进到头像右侧，昵称/时间/位置保持在同一行 */
-  .p-head { flex: 1 1 100%; padding-left: 54px; margin-bottom: 16px; }
-  .p-head-txt .p-name { padding-left: 0; }
-  .p-head-txt .p-time { order: 0; margin-left: 0; margin-top: 0; }
-  .p-head-txt .p-location { order: 0; margin-left: 0; }
-  .p-time { order: 1; flex: 0 1 auto; margin-left: 54px; }
-  .p-location { order: 2; flex: 0 1 auto; margin-top: 0; margin-left: 12px; }
+  /* 头部容器：头像(42px)+12px 间距 自然把右侧文字缩进到 54px；与正文间距 1em */
+  .p-head, .post-feed .p-head { margin-bottom: 1em; }
+  .post-feed .p-head { height: auto; }
+  .post-feed .p-head-txt { position: static; max-width: none; }
+  .post-feed .p-text, .post-feed .p-single, .post-feed .p-grid, .post-feed .p-full,
+  .post-feed .p-audio, .post-feed .p-media-el,
+  .post-feed .p-foot, .post-feed .acts { margin-left: 0; }
+  .post-feed .p-text { margin-top: 0; }
+  .p-name { padding-left: 0; }
+  .p-head-txt .p-time { margin-left: 0; margin-top: 0; }
+  /* 信息流：昵称下的时间副本（DOM 已在 .p-head 容器里）；foot 里那份桌面用，这里藏掉 */
+  .p-time-head { display: block; margin-left: 0; }
+  .p-foot .p-time { display: none; }
   .p-text { order: 3; flex: 1 1 100%; }
   /* 图片/音视频没被点名，但夹在正文与操作行中间，只有跟着拉通才不会一宽一窄地错位 */
   .p-single, .p-grid, .p-full, .p-audio, .p-media-el { order: 4; flex: 1 1 100%; }
