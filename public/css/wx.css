@@ -556,8 +556,11 @@ body[data-page="post"] .cbar.show { margin-top: 16px; border-top: 0; }
      #garden-bg 0（花园背景，最远，只在两侧留白露出）→ .phone（白列，z-auto，
      DOM 在花园之后所以压住它）→ #snow/#blossom 5（飘落层，盖过白列）→
      雪堆积层 6 → .pop 30 → .nav 100 → 表情面板 140 → .toast 260 → .viewer 300 →
-     .mask 400 → .burst 500。.cbar 无 z-index：白列不透明，雪画布在 DOM 尾部
-     天然盖在整列之上（历史行为，用户未提出异议）。 */
+      .mask 400 → .burst 500。.cbar 无 z-index：白列不透明，雪画布在 DOM 尾部
+      天然盖在整列之上（历史行为，用户未提出异议）。 */
+ /* 彩色指针拖尾：压在飘落层(5/6)与 .cbar(7) 之上、所有交互浮层(.pop 30 起)之下；
+    pointer-events:none 纯装饰，页面隐藏时由 sparkle.js 自行暂停 rAF。 */
+ .sparkle-layer { position: fixed; inset: 0; z-index: 8; pointer-events: none; display: block; }
 #snow, #blossom { position: fixed; inset: 0; z-index: 5; pointer-events: none; display: block; }
 /* 桃花与飘雪同层：两者互斥，同一时刻只有一个画布存在，不需要再分先后 */
 #snow-ground, #blossom-ground { position: fixed; inset: 0; z-index: 6; pointer-events: none; display: block; }
