@@ -127,6 +127,25 @@ canvas#game { position:absolute; inset:0; display:block; width:100%; height:100%
 #cardBox { margin-top:16px; border-radius:12px; overflow:hidden; box-shadow:0 10px 30px rgba(0,0,0,.5); line-height:0; }
 #cardBox canvas { width:100%; max-width:340px; height:auto; }
 #cardHint { font-size:11.5px; color:#a8cdb2; margin-top:9px; line-height:1.7; }
+/* 今日榜：等宽字体数字对齐更整齐 */
+#boardBox { margin-top:12px; padding:10px 12px; border-radius:12px; text-align:left;
+  background:rgba(255,255,255,.05); border:1px solid rgba(200,235,205,.16);
+  max-height:190px; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+#boardBox .brow { display:flex; align-items:baseline; gap:8px; font-size:12.5px; line-height:2; color:#cfe4cf; }
+#boardBox .brow b { min-width:20px; color:#ffe6a8; font-weight:700; }
+#boardBox .brow .bn { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#boardBox .brow.me { color:#ffe6a8; }
+#boardBox .bhead { font-size:10.5px; color:#9fc3a8; letter-spacing:1px; border-bottom:1px solid rgba(200,235,205,.16); padding-bottom:5px; margin-bottom:3px; }
+#boardBox .empty { color:#9fc3a8; font-size:12px; text-align:center; line-height:2.4; }
+/* 武器分键：三个小方块横排在出拳键上方，未解锁置灰 */
+#wepRow { position:absolute; right:calc(14px + env(safe-area-inset-right)); bottom:calc(112px + env(safe-area-inset-bottom)); z-index:18; display:flex; gap:8px; pointer-events:none; }
+.wep { width:42px; height:42px; border-radius:10px; pointer-events:auto; cursor:pointer;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  font-size:15px; color:#eaf6e6; background:rgba(10,20,14,.44); border:1px solid rgba(190,235,200,.3);
+  -webkit-backdrop-filter:blur(5px); backdrop-filter:blur(5px); }
+.wep small { font-size:8px; opacity:.7; letter-spacing:.5px; }
+.wep.on { border-color:rgba(255,220,140,.8); color:#ffe6a8; background:rgba(80,60,20,.5); }
+.wep.locked { opacity:.32; pointer-events:none; }
 #toast { position:absolute; left:50%; bottom:calc(150px + env(safe-area-inset-bottom)); transform:translate(-50%,10px);
   z-index:60; padding:9px 16px; border-radius:999px; font-size:13.5px; letter-spacing:1px; white-space:nowrap;
   background:rgba(8,20,12,.78); border:1px solid rgba(190,235,200,.3); color:#eaf7e6;
@@ -168,6 +187,11 @@ canvas#game { position:absolute; inset:0; display:block; width:100%; height:100%
     <div id="stickKnob"></div>
     <div class="act-btn" id="btnPunch"><span>出拳</span><small>连按三连</small></div>
     <div class="act-btn" id="btnWhistle"><span>吹哨</span><span class="cd"></span></div>
+    <div id="wepRow">
+      <div class="wep on" id="wepStone"><span>🪨</span><small>投石</small></div>
+      <div class="wep locked" id="wepHarpoon"><span>🔱</span><small>鱼叉</small></div>
+      <div class="wep locked" id="wepTorch"><span>🔥</span><small>火把</small></div>
+    </div>
   </div>
   <div id="rotateTip">横屏视野更开阔</div>
   <div id="toast"></div>
@@ -182,6 +206,7 @@ canvas#game { position:absolute; inset:0; display:block; width:100%; height:100%
         <i>出拳</i> 三连击可把幼兽顶退 · <i>吹哨</i> 召回散羊，但会吵醒狗熊<br>
         救回的羊会跟着你跑；<i>队尾被叼走 = 掉勇气</i>
       </div>
+      <div class="badge" id="dailyBadge" style="display:block;margin-top:14px"></div>
       <button class="bigbtn" id="btnStart">进入丛林</button>
     </div>
   </div>
@@ -207,6 +232,14 @@ canvas#game { position:absolute; inset:0; display:block; width:100%; height:100%
         <div><b id="rTime">0:00</b><span>用时</span></div>
       </div>
       <div id="badgeBox" style="text-align:center"></div>
+      <!-- 二期：今日榜 + 好友助力复活。都做了失败静默：接口挂了不影响玩法 -->
+      <div class="rowbtn" style="margin-top:14px">
+        <button class="ghostbtn" id="btnBoard" style="margin-top:0">今日榜</button>
+        <button class="ghostbtn" id="btnAssist" style="margin-top:0">请好友助力复活</button>
+      </div>
+      <div id="boardBox" class="hidden"></div>
+      <div id="reviveLine" class="tips" style="text-align:center;display:none;margin-top:10px"></div>
+      <button class="bigbtn hidden" id="btnRevive" style="margin-top:10px">复活 · 继续这一局</button>
       <div id="cardBox"><canvas id="shareCard" width="680" height="382"></canvas></div>
       <div id="cardHint">长按上方战绩卡保存 · 或点下方按钮<br><span id="relayLine"></span></div>
       <button class="bigbtn" id="btnAgain">再来一次</button>
@@ -234,12 +267,31 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const smooth = (t) => t * t * (3 - 2 * t);
 const TAU = Math.PI * 2;
 
-/* 可复现随机：分享链接带 seed 时，好友跑的是同一片丛林 */
-const qsSeed = (() => {
+/* 可复现随机：分享链接带 seed 时，好友跑的是同一片丛林。
+   二期：不带 seed 时默认进「今日丛林」——种子由中国时区日期派生，
+   全站同一天玩的是同一局，日榜才有意义；?seed= 仍可覆盖（接力挑战）。 */
+const qsSeedRaw = (() => {
   const m = /[?&]seed=(\d{1,9})/.exec(location.search);
-  return m ? (parseInt(m[1], 10) >>> 0) : (Date.now() % 2147483647);
+  return m ? (parseInt(m[1], 10) >>> 0) : null;
 })();
-const qsFrom = (() => { const m = /[?&]from=([\w-]{1,24})/.exec(location.search); return m ? m[1] : null; })();
+const DAY_SEED = (() => {
+  const d = new Date(Date.now() + 8 * 3600 * 1000);
+  const s = d.toISOString().slice(0, 10).replace(/-/g, '');
+  let h = 2166136261;
+  for (const c of s) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; }
+  return h % 2147483647;
+})();
+const qsSeed = qsSeedRaw == null ? DAY_SEED : qsSeedRaw;   // 旧名保留：噪声纹理、关卡生成都读它
+const qsFrom = (() => { const m = /[?&]from=([\w-]{1,24})/.exec(location.search); return m ? decodeURIComponent(m[1]) : null; })();
+/* 助力复活：好友打开带 ?revive=<token> 的链接，进页即自动核销一次 */
+const qsRevive = (() => { const m = /[?&]revive=([0-9a-f]{12,24})/i.exec(location.search); return m ? m[1].toLowerCase() : null; })();
+const qsDay = (() => { const m = /[?&]day=(\d{4}-\d{2}-\d{2})/.exec(location.search); return m ? m[1] : null; })();
+const DAY_LABEL = (() => {
+  const d = new Date(Date.now() + 8 * 3600 * 1000);
+  return `${Number(d.toISOString().slice(5, 7))}月${Number(d.toISOString().slice(8, 10))}日`;
+})();
+/* 系统开了"减弱动态"：不震屏、粒子减半（粒子还有自己的上限，两道闸一起起作用） */
+const RM = (() => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 function mulberry32(a) {
   return function () {
     a |= 0; a = (a + 0x6D2B79F5) | 0;
@@ -1299,6 +1351,7 @@ let SHAFT_T = -9, SHAFT_CAM = -9;   // 光带本身动得很慢，按时间/相�
 function drawLightShafts(g, t) {
   const c = G.ch;
   if (!c.shaft || c.weather === 'rain') return;
+  if (G.q === 'min') return;              // 自动画质最低档：光带整个关掉
   const bottom = Math.round(H * .74);
   if (SHAFT_C.width !== Math.round(W * DPR) || SHAFT_C.height !== Math.round(bottom * DPR)) {
     SHAFT_C.width = Math.round(W * DPR); SHAFT_C.height = Math.round(bottom * DPR);
@@ -1387,7 +1440,12 @@ const G = {
   pen: null, boss: null, whistleEcho: 0,
   fx: { flash: 0, slowmo: 0 },
   seed: qsSeed, from: qsFrom,
-  sound: true, firstStart: true
+  sound: true, firstStart: true,
+  /* 二期：武器（stone 常驻；harpoon/torch 关卡内拾取补给箱解锁，只在本局有效） */
+  weps: { stone: true, harpoon: false, torch: false },
+  curWeapon: 'stone',
+  revived: false, reviveReady: false, boardOn: null, myRank: null, deathSnap: null,
+  q: 'high',            // 自动画质：high | low | min（按实测帧率降档）
 };
 
 const p = {
@@ -1414,6 +1472,12 @@ function makeLevel(n) {
   // 障碍倒木：需要跳跃（3 根起随关卡增多）
   const logs = 2 + n;
   for (let i = 0; i < logs; i++) G.props.push({ k: 'log', x: 500 + i * (LEVEL_LEN - 900) / logs + rr(-60, 60), s: 1 });
+  // 补给箱：武器解锁的来源。第 1 章必出鱼叉（让分键在第一关就被发现），后面随机补
+  if (n === 1) G.props.push({ k: 'crate', x: 700, w: 'harpoon' });
+  else {
+    if (n >= 2 && !G.weps.torch) G.props.push({ k: 'crate', x: rr(800, 1400), w: 'torch' });
+    if (n >= 3) G.props.push({ k: 'crate', x: rr(1600, 2400), w: 'harpoon' });
+  }
   G.props.sort((a, b) => a.x - b.x);
 
   // 羊：散落在关卡里，最后一只在最深处的“看守圈”
@@ -1455,7 +1519,7 @@ function mkHyena(x) {
    五、音频：全部程序化合成（不加载任何文件，微信内首触解锁）
    ===================================================================== */
 const A = (() => {
-  let ac = null, master = null, wind = null, rain = null, ready = false, timer = null;
+  let ac = null, master = null, wind = null, rain = null, ready = false, timer = null, muted = false;
   function init() {
     if (ready) return;
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -1557,9 +1621,11 @@ const A = (() => {
     yip: () => tone(900, 1500, .12, 'sawtooth', .06),
     lose: () => { tone(400, 120, .8, 'triangle', .16); },
     win: () => { [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => tone(f, f, .35, 'triangle', .1), i * 130)); },
-    thunder: () => { noise(1.4, 120, .5, .22, 'lowpass'); cam.shake = 10; },
+    thunder: () => { noise(1.4, 120, .5, .22, 'lowpass'); if (!RM) cam.shake = 10;
+      /* 打雷瞬间把总音量压下去半秒再回来：一嗓子下去耳朵疼（静音时不碰） */
+      if (ac && master && !muted) { master.gain.cancelScheduledValues(ac.currentTime); master.gain.setValueAtTime(.3, ac.currentTime); master.gain.linearRampToValueAtTime(.8, ac.currentTime + .9); } },
     start: () => { init(); resume(); if (!timer) { timer = setTimeout(bird, 800); music(); } },
-    setRain, mute: (m) => { if (master) master.gain.value = m ? 0 : .8; }
+    setRain, mute: (m) => { muted = !!m; if (master && ac) { master.gain.cancelScheduledValues(ac.currentTime); master.gain.value = m ? 0 : .8; } }
   };
 })();
 
@@ -1644,6 +1710,8 @@ window.addEventListener('keydown', (e) => {
   if (k === 'ArrowDown' || k === 's' || k === 'S') input.duckHeld = true;
   if (k === ' ' || k === 'j' || k === 'J') input.punchQ = true;
   if (k === 'e' || k === 'E' || k === 'q' || k === 'Q') input.whistleQ = true;
+  // 武器分键：键盘 1/2/3 与移动端三个小方块一致
+  if (G.state === 'playing' && ['1', '2', '3'].includes(k)) selectWeapon({ '1': 'stone', '2': 'harpoon', '3': 'torch' }[k]);
   if (k === 'Enter') { if (G.state === 'gate') boot(); else if (G.state === 'result') again(); }
   if (k === 'Escape') G.state === 'playing' ? pause() : G.state === 'paused' ? unpause() : 0;
 });
@@ -1697,9 +1765,13 @@ function update(dt) {
   p.whistleT = Math.max(0, p.whistleT - dt);
   p.whistleCd = Math.max(0, p.whistleCd - dt);
   p.invul = Math.max(0, p.invul - dt);
+  checkCrates();                                   // 武器补给箱：走进即开
   if (input.punchQ && p.punchCd <= 0) {
-    p.punchT = .18; p.punchCd = .3; p.chain = (p.chain + 1) % 4; p.chainT = .8; A.punch();
-    punchHit();
+    const w = G.curWeapon;
+    p.punchT = .18;
+    p.punchCd = w === 'harpoon' ? .55 : w === 'torch' ? .42 : .3;
+    p.chain = (p.chain + 1) % 4; p.chainT = .8; A.punch();
+    weaponHit();
   }
   input.punchQ = false;
   if (input.whistleQ && p.whistleCd <= 0) doWhistle();
@@ -1722,6 +1794,12 @@ function update(dt) {
       const dx = goal - o.x;
       o.vx = clamp(dx * 5, -230, 230);
       o.x += o.vx * dt;
+      // 防堆叠：贴太近的同伴互相推开——不然整群会叠成一坨，读不出"队形"
+      for (let j = 0; j < G.sheep.length; j++) {
+        if (j === i || G.sheep[j].state !== 'follow') continue;
+        const d2 = o.x - G.sheep[j].x;
+        if (Math.abs(d2) < 17) o.x += Math.sign(d2 || ((o.seed || .5) - .5) || 1) * 42 * dt;
+      }
       o.moving = Math.abs(o.vx) > 12;
       o.dir = o.vx < -6 ? -1 : o.vx > 6 ? 1 : o.dir;
       followers++;
@@ -1756,6 +1834,14 @@ function update(dt) {
     const dist = f.x - p.x, ad = Math.abs(dist);
     f.dir = dist > 0 ? -1 : 1;
     if (f.stun > 0) { f.stun -= dt; f.moving = false; continue; }
+    // 恐惧（火把）：狮子/鬣狗会掉头跑开——给"怕火"一个真实的身体反应
+    if (f.fear > 0) {
+      f.fear -= dt;
+      f.x += Math.sign(f.x - p.x || 1) * 95 * dt;
+      f.moving = true;
+      f.sx = f.x - cam.x; f.sy = playerY(f);
+      continue;
+    }
 
     if (f.k === 'lion') {
       /* 狮子状态机：roam → stalk（锁定目标）→ charge（0.6s 蓄势，原地不动）→ pounce（直线扑出）→ recover。
@@ -1860,27 +1946,48 @@ function update(dt) {
   checkGoal();
 }
 
-/* ---------- 战斗与召回 ---------- */
-function punchHit() {
-  const reach = 46;
-  for (const f of G.foes) {
-    if (f.stun > 0 && Math.abs(f.x - p.x) < reach + 14) {
-      f.hp--; f.stun = Math.min(2.4, f.stun + .5);
+/* ---------- 攻击：按当前武器分派 ----------
+   stone  近身连击（多目标 1 伤）——原作的"出拳"
+   harpoon 远距离重击（最近一个目标 2 伤），克制狗熊的厚血
+   torch  中距横扫 + 恐惧（狮子/鬣狗短暂后退），雷雨章的保命键 */
+function weaponHit() {
+  const w = G.curWeapon;
+  const reach = w === 'harpoon' ? 96 : w === 'torch' ? 58 : 46;
+  const dmg = w === 'harpoon' ? 2 : 1;
+
+  // 命中集合：stone 是范围内全部，harpoon/torch 只取最近一个
+  const inReach = G.foes.filter(f => !f.dead && Math.abs(f.x - p.x) < reach);
+  let hitAny = false;
+  const targets = w === 'stone' ? inReach : [inReach.sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0]].filter(Boolean);
+  for (const f of targets) {
+    hitAny = true;
+    if (f.stun > 0) {
+      f.hp -= dmg; f.stun = Math.min(2.4, f.stun + .5);
       if (f.hp <= 0) driveAway(f);
-      bumpCombo(); return;
+      bumpCombo(); continue;
     }
-    if (Math.abs(f.x - p.x) < reach && f.state !== 'pounce' && !(f.k === 'bear' && f.state === 'sleep')) {
-      if (f.k === 'bear') { f.hp--; f.stun = .25; if (f.hp <= 0) driveAway(f); A.hit(); bumpCombo(); }
-      else if (f.k === 'hyena') { f.dash = 0; f.stun = .8; if (f.carry) dropCarry(f); bumpCombo(); }
-      else if (f.k === 'lion') { f.stun = .55; bumpCombo(); A.hit(); }
-      return;
+    if (f.k === 'bear') {
+      if (f.state === 'sleep') { f.state = 'wake'; f.wakeT = .5; A.growl(); continue; }
+      f.hp -= dmg; f.stun = .25;
+      if (f.hp <= 0) driveAway(f); else A.hit();
+      bumpCombo(); continue;
     }
-    if (f.k === 'bear' && f.state === 'sleep' && Math.abs(f.x - p.x) < reach) { f.state = 'wake'; f.wakeT = .5; A.growl(); }
+    if (f.k === 'hyena') { f.dash = 0; f.stun = .8; if (f.carry) dropCarry(f); bumpCombo(); continue; }
+    // 狮子：火把附加恐惧（短暂后退，给它一个"怕火"的性格）
+    f.stun = w === 'torch' ? .9 : .55;
+    if (w === 'torch') f.fear = 2;
+    bumpCombo(); A.hit();
   }
+  if (w === 'torch' && inReach.length) { for (let i = 0; i < 8; i++) puff(p.x + p.dir * 40, GROUND - 34, '#ffcf8a'); buzz(12); }
   // 被叼走的羊：靠得够近、且羊群成势（或叼它的家伙正被打晕）就能夺回
   for (const o of G.sheep) {
     if (o.state === 'carried' && Math.abs(o.x - p.x) < 60 && (G.flockNow >= 2 || (o.carry && o.carry.stun > 0))) {
       dropCarry(o.carry); bumpCombo(); return;
+    }
+  }
+  if (!hitAny && w === 'stone') {
+    for (const f of G.foes) {
+      if (f.k === 'bear' && f.state === 'sleep' && Math.abs(f.x - p.x) < reach) { f.state = 'wake'; f.wakeT = .5; A.growl(); }
     }
   }
 }
@@ -1941,11 +2048,15 @@ function popText(txt, col) {
   (G.texts = G.texts || []).push({ txt, col, x: p.x, y: GROUND - 130, t: 1.1 });
 }
 function puff(x, y, col) {
+  /* 粒子上限随自动画质走：低端机降到 50，粒子不再糊屏 */
+  const cap = G.q === 'high' ? 160 : G.q === 'low' ? 90 : 50;
+  if (G.parts.length > cap) return;
   G.parts.push({ x, y, vx: rr(-70, 70), vy: rr(-130, -30), g: 260, life: rr(.4, .9), r: rr(2, 6), col });
 }
 /* 雨/光尘的生成统一在 updateWeather，旧的单层 spawnRain 已删除 */
 function spawnMotes(dt) {
-  if (G.parts.length < 120 && Math.random() < dt * 24) {
+  const cap = G.q === 'high' ? 120 : G.q === 'low' ? 60 : 30;
+  if (G.parts.length < cap && Math.random() < dt * 24 * (RM ? .5 : 1)) {
     G.parts.push({ x: cam.x + rr(-40, W), y: rr(0, GROUND), vx: rr(-10, 10), vy: rr(-14, -4), g: 0, life: rr(2, 4), r: rr(1, 2.6), col: 'rgba(255,236,190,.8)', glow: true });
   }
 }
@@ -1953,19 +2064,23 @@ function spawnMotes(dt) {
 /* ---------- 二轮：分景深的雨（三层）+ 落地溅花 + 乌云 ---------- */
 let RAIN = null, SPLASH = [], RIPPLE = [];
 function makeRain() {
-  return [
+  /* 雨层按自动画质裁：high 三层全开，low 去掉最远层，min 只留最近一层 */
+  const all = [
     { n: 54, len: 7, spd: 620, a: .14, w: .8, par: .5 },
     { n: 46, len: 13, spd: 900, a: .3, w: 1.2, par: .8 },
     { n: 30, len: 24, spd: 1220, a: .55, w: 2.0, par: 1.2 }
-  ].map(cfg => {
+  ];
+  const use = G.q === 'high' ? all : G.q === 'low' ? all.slice(1) : all.slice(2);
+  return use.map(cfg => {
     const drops = [];
     for (let i = 0; i < cfg.n; i++) drops.push({ x: rr(-120, W + 120), y: rr(-H, H), v: cfg.spd * rr(.85, 1.2) });
-    return { cfg, drops };
+    return { cfg, drops, ql: G.q };
   });
 }
 function updateWeather(dt) {
   if (ch.weather === 'rain') {
-    if (!RAIN) RAIN = makeRain();
+    // 画质档位变化时重建雨层
+    if (!RAIN || RAIN.ql !== G.q) { RAIN = makeRain(); RAIN.ql = G.q; }
     const wind = .8 + Math.sin(G.t * .5) * .3;
     for (const L of RAIN) {
       for (const d of L.drops) {
@@ -2066,7 +2181,7 @@ function checkGoal() {
 function drawProp(pr) {
   const x = pr.x - cam.x, y = GROUND;
   if (x < -120 || x > W + 120) return;
-  const s = pr.s;
+  const s = pr.s || 1;                     // 补给箱等新道具没带 s，缺省 1（否则 NaN 连环炸）
   if (pr.k === 'rock') {
     shadow(x, y + 2, 22 * s, 6 * s, .8);
     const g = ctx.createLinearGradient(x - 20 * s, y - 26 * s, x + 18 * s, y);
@@ -2115,6 +2230,30 @@ function drawProp(pr) {
       ctx.restore();
     }
     ctx.restore();
+  } else if (pr.k === 'crate') {
+    // 武器补给箱：未开时轻微浮动 + 一道反光，开过只剩空箱
+    shadow(x, y + 2, 18 * s, 5 * s, pr.opened ? .5 : .9);
+    const bob = pr.opened ? 0 : Math.sin(G.t * 2 + pr.x) * 2;
+    const open = pr.opened;
+    const g = ctx.createLinearGradient(x - 15 * s, 0, x + 15 * s, 0);
+    g.addColorStop(0, open ? '#4a3c2a' : '#7a5a34'); g.addColorStop(1, '#4a3822');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.roundRect(x - 14 * s, y - 20 * s + bob, 28 * s, 20 * s, 3 * s); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(x - 14 * s, y - 12 * s + bob); ctx.lineTo(x + 14 * s, y - 12 * s + bob); ctx.stroke();
+    if (!open) {
+      ctx.fillStyle = 'rgba(255,224,150,.9)';
+      ctx.beginPath(); ctx.arc(x, y - 10 * s + bob, 3.2 * s, 0, TAU); ctx.fill();
+      // 上方光点提示：这是可以走过去拿的东西
+      ctx.save(); ctx.globalAlpha = .5 + Math.sin(G.t * 3 + pr.x) * .3;
+      const gg = ctx.createRadialGradient(x, y - 34 * s, 0, x, y - 34 * s, 12 * s);
+      gg.addColorStop(0, '#fff3cf'); gg.addColorStop(1, 'rgba(255,243,207,0)');
+      ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(x, y - 34 * s, 12 * s, 0, TAU); ctx.fill();
+      ctx.restore();
+    } else {
+      ctx.strokeStyle = 'rgba(0,0,0,.4)';
+      ctx.beginPath(); ctx.moveTo(x - 10 * s, y - 20 * s); ctx.lineTo(x + 4 * s, y - 30 * s); ctx.stroke();
+    }
   } else if (pr.k === 'stump') {
     shadow(x, y + 2, 18 * s, 5 * s, .8);
     const g = ctx.createLinearGradient(x - 14 * s, 0, x + 14 * s, 0);
@@ -2172,7 +2311,7 @@ function drawWorld() {
   blit(layers.far, .12);
   blit(layers.mid, .42);
   ctx.save();
-  if (cam.shake) ctx.translate(rr(-cam.shake, cam.shake) * .4, rr(-cam.shake, cam.shake) * .3);
+  if (cam.shake && !RM) ctx.translate(rr(-cam.shake, cam.shake) * .4, rr(-cam.shake, cam.shake) * .3);
   blit(layers.ground, 1);
   for (const pr of G.props) drawProp(pr);
   drawPen();
@@ -2190,7 +2329,8 @@ function drawWorld() {
         const fn = f.k === 'lion' ? drawLion : f.k === 'bear' ? drawBear : drawHyena;
         const bw = f.k === 'bear' ? 132 : f.k === 'lion' ? 118 : 84;
         const bh = f.k === 'bear' ? 92 : f.k === 'lion' ? 84 : 58;
-        litBox(f.sx - bw / 2, f.sy - bh, bw, bh + 6, () => fn(f));
+        // 最低画质档：野兽走普通绘制（litBox 的离屏往返是渲染大头，关键时刻先保帧率）
+        if (G.q === 'min') fn(f); else litBox(f.sx - bw / 2, f.sy - bh, bw, bh + 6, () => fn(f));
       }
     });
   }
@@ -2284,7 +2424,16 @@ let last = 0, rafId = 0;
 function frame(ts) {
   rafId = requestAnimationFrame(frame);
   const dt = Math.min(.033, (ts - last) / 1000 || .016); last = ts;
+  /* 自动画质：每 2 秒实测一次帧率，低于 40 降一档（减粒子/雨/光带），低于 26 再降
+     （关光带、野兽不再走 litBox）。按实测降而不是按 UA 猜——低端安卓的差别只有跑起来才知道。 */
   if (G.state === 'playing') {
+    G.fpsN = (G.fpsN || 0) + 1; G.fpsT = G.fpsT || ts;
+    if (ts - G.fpsT >= 2000) {
+      const f = Math.round(G.fpsN * 1000 / (ts - G.fpsT));
+      G.fpsN = 0; G.fpsT = ts;
+      if (f < 26 && G.q !== 'min') G.q = 'min';
+      else if (f < 40 && G.q === 'high') G.q = 'low';
+    }
     update(dt); p.sx = p.x - cam.x; p.sy = GROUND - p.y; syncHud(); drawWorld();
   } else if (G.state === 'paused') {
     drawWorld();
@@ -2299,6 +2448,10 @@ function boot() {
   touchLayer.classList.remove('hidden');
   G.state = 'playing';
   G.courage = 3; G.score = 0; G.elapsed = 0; G.maxCombo = 0;
+  /* 本局重开：武器解锁与复活次数都归零（拾取的紧张感要每局重新攒） */
+  G.weps = { stone: true, harpoon: false, torch: false };
+  G.curWeapon = 'stone'; G.revived = false; G.reviveReady = false;
+  paintWepChips(); coachFlow();
   makeLevel(1);
   popText(`第 1 章 · ${ch.name}`, '#ffe9b8');
   orientTip();
@@ -2332,11 +2485,31 @@ function gameOver(win) {
   $('relayLine').textContent = G.from ? `这是「${G.from}」留在丛林里的同一局` : '下一位朋友会跑进同一片丛林';
   drawCard(win);
   saveBest(win);
+  /* 二期：死亡时存快照（复活=重打当前章，但救回数/用时延续），交成绩、开日榜与助力 */
+  G.deathSnap = { level: G.level, need: G.need, total: G.total, elapsed: G.elapsed, rescued: G.rescued };
+  G.revived = false;
+  wireResultExtras(win);
+  submitScore(win);
+}
+
+/* 结算页上二期控件的状态：赢局不显示助力/复活；榜单按钮常在（没开就点开提示） */
+function wireResultExtras(win) {
+  const canAssist = !win && !G.revived;
+  $('btnAssist').style.display = canAssist ? '' : 'none';
+  $('btnAssist').disabled = false; $('btnAssist').style.opacity = 1;
+  $('btnRevive').classList.add('hidden');
+  $('reviveLine').style.display = 'none';
+  $('boardBox').classList.add('hidden');
+  assistToken = null; stopAssistPoll();
+  paintWepChips();
 }
 function again() {
   $('resultScreen').classList.add('hidden');
   $('hud').classList.remove('hidden'); $('hudBtns').classList.remove('hidden'); touchLayer.classList.remove('hidden');
   G.state = 'playing'; G.courage = 3; G.score = 0; G.elapsed = 0; G.maxCombo = 0;
+  G.weps = { stone: true, harpoon: false, torch: false };
+  G.curWeapon = 'stone'; G.revived = false; G.reviveReady = false;
+  paintWepChips();
   makeLevel(1);
   popText(`第 1 章 · ${ch.name}`, '#ffe9b8');
 }
@@ -2391,8 +2564,7 @@ function drawCard(win) {
 function shareLink() {
   const base = location.origin + location.pathname;
   return `${base}?seed=${G.seed}&from=${encodeURIComponent(shortTag())}`;
-}
-function shortTag() {
+}function shortTag() {
   const names = ['牧云人', '守夜羊倌', '林间小满', '青绒', '远山', '草雾', '竹露'];
   let v = 0; const s = String(G.seed);
   for (let i = 0; i < s.length; i++) v = (v * 31 + s.charCodeAt(i)) >>> 0;
@@ -2425,6 +2597,178 @@ function saveBest(win) {
   } catch (e) { /* 隐私模式忽略 */ }
 }
 
+/* =====================================================================
+   十、第二期：每日丛林 / 今日榜 / 好友助力复活 / 武器分键
+   全部做了失败静默：后端没部署或断网时，游戏本体照常玩（本地 best 兜底）。
+   ===================================================================== */
+/* 匿名身份：hash 只用于服务端算“我的名次”（不涉 IP/账号），昵称可自行保存 */
+const myHash = (() => {
+  try {
+    let h = localStorage.getItem('sw_dv_hash');
+    if (!h) { h = crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : Math.random().toString(16).slice(2); localStorage.setItem('sw_dv_hash', h); }
+    return h.slice(0, 32);
+  } catch (e) { return 'anon' + Math.random().toString(16).slice(2, 10); }
+})();
+const myName = (() => {
+  try { return localStorage.getItem('sw_dv_name') || shortTag(); } catch (e) { return shortTag(); }
+})();
+const api = (p, body) => fetch(p, {
+  method: body ? 'POST' : 'GET',
+  headers: body ? { 'Content-Type': 'application/json' } : undefined,
+  body: body ? JSON.stringify(body) : undefined,
+}).then(r => r.json()).catch(() => null);
+
+const todayCN = () => {
+  const d = new Date(Date.now() + 8 * 3600 * 1000);
+  return d.toISOString().slice(0, 10);
+};
+const GAME_DAY = qsDay || todayCN();      // 接力链接带 day，保证两人算同一天
+
+async function submitScore(win) {
+  try {
+    const r = await api('/api/game/score', {
+      day: GAME_DAY, hash: myHash, name: myName,
+      score: G.score, sheep: G.rescued, combo: G.maxCombo,
+      secs: Math.floor(G.elapsed), seed: G.seed, win: !!win,
+    });
+    G.myRank = r && r.rank ? r.rank : null;
+    G.boardOn = !!(r && r.enabled !== false);
+    if (G.boardOn && G.myRank) popText(`今日第 ${G.myRank.rank} 名`, '#ffe6a8');
+  } catch (e) { G.boardOn = false; }
+}
+
+async function showBoard() {
+  const box = $('boardBox');
+  if (!G.boardOn) { box.innerHTML = '<div class="empty">今天的服务器有点害羞，榜单暂时没开</div>'; box.classList.remove('hidden'); return; }
+  box.innerHTML = '<div class="empty">加载中…</div>'; box.classList.remove('hidden');
+  const r = await api(`/api/game/board?day=${GAME_DAY}&limit=10`);
+  if (!r || !r.enabled) { box.innerHTML = '<div class="empty">榜单暂时没开</div>'; return; }
+  const rows = (r.rows || []);
+  if (!rows.length) { box.innerHTML = '<div class="empty">今天还没有人交成绩——第一名就是你</div>'; return; }
+  const lines = rows.map((row, i) => {
+    const m = Math.floor(row.secs / 60), s = String(row.secs % 60).padStart(2, '0');
+    const mine = row.name === myName && G.myRank && G.myRank.rank === i + 1;
+    return `<div class="brow${mine ? ' me' : ''}"><b>${i + 1}</b><span class="bn">${escapeHtml(row.name)}</span><span>${row.sheep}羊 ×${row.combo}</span><span>${m}:${s}</span></div>`;
+  }).join('');
+  const my = G.myRank ? `<div class="brow me"><b>我</b><span class="bn">第 ${G.myRank.rank}/${G.myRank.total} 名 · 最好 ${G.myRank.best} 分</span></div>` : '';
+  box.innerHTML = `<div class="bhead">今日丛林 · ${DAY_LABEL} · 前 10</div>${lines}${my}`;
+}
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+/* ---------- 好友助力复活 ---------- */
+let assistToken = null, assistPoll = null;
+async function createAssist() {
+  const r = await api('/api/game/assist', { day: GAME_DAY, hash: myHash, name: myName });
+  if (r && r.ok) { assistToken = r.token; return true; }
+  return false;
+}
+async function pollAssist() {
+  if (!assistToken) return;
+  const r = await api(`/api/game/assist?token=${assistToken}&hash=${myHash}`);
+  if (r && r.ok && r.used) {
+    stopAssistPoll(); G.reviveReady = true;
+    $('btnRevive').classList.remove('hidden');
+    $('reviveLine').textContent = `${r.usedBy} 帮你复活了！点下方按钮继续这一局`;
+    buzz(20); toast(`${r.usedBy} 帮你复活了`);
+  }
+}
+function stopAssistPoll() { if (assistPoll) { clearInterval(assistPoll); assistPoll = null; } }
+async function startAssist() {
+  $('btnAssist').disabled = true; $('btnAssist').style.opacity = .5;
+  const ok = await createAssist();
+  if (!ok) { $('reviveLine').style.display = ''; $('reviveLine').textContent = '今天服务器没开助力，先用本地best练练手吧'; return; }
+  const link = `${location.origin}${location.pathname}?revive=${assistToken}&day=${GAME_DAY}&seed=${G.seed}&from=${encodeURIComponent(myName)}`;
+  $('reviveLine').style.display = '';
+  $('reviveLine').textContent = '链接已复制，发给一位好友；他点开后这里会亮起复活按钮';
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).catch(() => {});
+  else fallbackCopy(link);
+  stopAssistPoll();
+  assistPoll = setInterval(pollAssist, 3000);
+  pollAssist();
+}
+/* 复活 = 重打当前章，但延续死亡时的进度与用时（读 deathSnap）；
+   勇气回 2，且这一局只能复活一次——不然永不失败， Courage 的紧张感就没了 */
+function reviveRun() {
+  if (!G.deathSnap || G.revived) return;
+  G.revived = true; G.reviveReady = false;
+  $('resultScreen').classList.add('hidden');
+  $('hud').classList.remove('hidden'); $('hudBtns').classList.remove('hidden'); touchLayer.classList.remove('hidden');
+  G.state = 'playing'; last = performance.now();
+  G.courage = 2; G.elapsed = G.deathSnap.elapsed;
+  makeLevel(G.deathSnap.level);
+  G.rescued = 0; G.need = G.deathSnap.need; G.total = G.deathSnap.total;
+  popText(`重新出发 · 还差 ${G.need} 只`, '#ffe9b8');
+  orientTip();
+}
+/* 好友侧：带 ?revive= 进来 → 自动核销，然后清掉参数（刷新不再重复核销） */
+async function handleReviveParam() {
+  if (!qsRevive) return;
+  const r = await api('/api/game/assist/redeem', { token: qsRevive, name: myName });
+  if (r && r.ok && !r.used) { toast(`已为「${r.for}」的羊群注入勇气 ✨`); buzz(15); }
+  else if (r && r.used) toast(`这条助力已被「${r.usedBy}」用过了`);
+  else toast('助力没能送达');
+  try { history.replaceState(null, '', location.pathname + '?seed=' + (qsSeedRaw || '')); } catch (e) {}
+}
+
+/* ---------- 武器分键：投石 / 鱼叉 / 火把 ---------- */
+/* 解锁只在本局有效：拾取补给箱（关卡内摆好的 crate）解锁，死后重新收集。
+   火把在雷雨章多一档价值：照亮一圈 + 狮子怕火会后退。 */
+function wepChip(id) { return document.getElementById(id); }
+function paintWepChips() {
+  const map = { stone: 'wepStone', harpoon: 'wepHarpoon', torch: 'wepTorch' };
+  for (const [k, id] of Object.entries(map)) {
+    const el = wepChip(id);
+    el.classList.toggle('locked', !G.weps[k]);
+    el.classList.toggle('on', G.curWeapon === k);
+  }
+}
+function selectWeapon(k) {
+  if (!G.weps[k]) return;
+  G.curWeapon = k; paintWepChips();
+  toast({ stone: '投石：近身连击', harpoon: '鱼叉：远距离重击', torch: '火把：狮子怕火' }[k] || k);
+  buzz(8);
+}
+function unlockWeapon(k) {
+  if (G.weps[k]) return;
+  G.weps[k] = true; paintWepChips();
+  toast({ harpoon: '拾获鱼叉！点上方🔱切换', torch: '拾获火把！点上方🔥切换' }[k] || '');
+  buzz(15);
+}
+/* 补给箱：走进即开 */
+function checkCrates() {
+  for (const pr of G.props) {
+    if (pr.k !== 'crate' || pr.opened) continue;
+    if (Math.abs(p.x - pr.x) < 30 && p.y < 30) {
+      pr.opened = true; unlockWeapon(pr.w);
+      for (let i = 0; i < 14; i++) puff(pr.x, GROUND - 20, '#ffe6a8');
+    }
+  }
+}
+
+/* ---------- 新手引导（首局三步，看过就不再弹） ---------- */
+function coachFlow() {
+  let seen = false;
+  try { seen = !!localStorage.getItem('sw_dv_coach'); } catch (e) {}
+  if (seen || G.level !== 1) return;
+  try { localStorage.setItem('sw_dv_coach', '1'); } catch (e) {}
+  toast('左半屏拖动移动 · 上滑跳 · 下滑蹲', 3000);
+  setTimeout(() => toast('右下出拳，连按三连', 2600), 3100);
+  setTimeout(() => toast('吹哨召回散羊——但别吵醒狗熊', 3000), 5900);
+}
+
+/* ---------- 震动反馈（支持的设备才有感，不支持静默跳过） ---------- */
+function buzz(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) {} }
+
+function saveBest(win) {
+  try {
+    const k = 'sw_dv_best';
+    const prev = JSON.parse(localStorage.getItem(k) || '{"sheep":0,"combo":0}');
+    localStorage.setItem(k, JSON.stringify({
+      sheep: Math.max(prev.sheep, G.rescued), combo: Math.max(prev.combo, G.maxCombo), win: prev.win || !!win
+    }));
+  } catch (e) { /* 隐私模式忽略 */ }
+}
+
 let toastT = 0;
 function toast(msg) {
   const el = $('toast'); el.textContent = msg; el.classList.add('show');
@@ -2438,10 +2782,21 @@ $('btnQuit').addEventListener('click', home);
 $('btnAgain').addEventListener('click', again);
 $('btnHome').addEventListener('click', home);
 $('btnShare').addEventListener('click', shareNow);
+$('btnBoard').addEventListener('click', showBoard);
+$('btnAssist').addEventListener('click', startAssist);
+$('btnRevive').addEventListener('click', reviveRun);
 $('btnPause').addEventListener('click', () => (G.state === 'playing' ? pause() : unpause()));
 $('btnSound').addEventListener('click', function () {
   G.sound = !G.sound; A.mute(!G.sound); this.style.opacity = G.sound ? 1 : .45; this.textContent = G.sound ? '♪' : '×';
+  try { localStorage.setItem('sw_dv_mute', G.sound ? '0' : '1'); } catch (e) {}
 });
+/* 武器分键：三个小方块直选，键盘 1/2/3 同步 */
+wepChip('wepStone').addEventListener('click', () => selectWeapon('stone'));
+wepChip('wepHarpoon').addEventListener('click', () => selectWeapon('harpoon'));
+wepChip('wepTorch').addEventListener('click', () => selectWeapon('torch'));
+wepChip('wepStone').addEventListener('touchstart', (e) => { e.preventDefault(); selectWeapon('stone'); }, { passive: false });
+wepChip('wepHarpoon').addEventListener('touchstart', (e) => { e.preventDefault(); selectWeapon('harpoon'); }, { passive: false });
+wepChip('wepTorch').addEventListener('touchstart', (e) => { e.preventDefault(); selectWeapon('torch'); }, { passive: false });
 
 /* ---------- 启动 ---------- */
 function orientTip() {
@@ -2471,6 +2826,11 @@ orientTip();
   cam.x = 340; p.x = 640; p.sx = p.x - cam.x; p.sy = GROUND;
   drawWorld();
 })();
+/* 二期收尾：静音偏好、武器键初始态、好友助力链接的自动核销 */
+$('dailyBadge').textContent = `今日丛林 · ${DAY_LABEL} —— 全站同一天玩同一片丛林，玩完上榜`;
+try { if (localStorage.getItem('sw_dv_mute') === '1') { G.sound = false; A.mute(true); $('btnSound').textContent = '×'; $('btnSound').style.opacity = .45; } } catch (e) {}
+paintWepChips();
+handleReviveParam();
 requestAnimationFrame(frame);
 </script>
 </body>
