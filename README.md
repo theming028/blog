@@ -46,6 +46,37 @@ PORT=3000 HOST=127.0.0.1 node server.js
 | `games/submarine/index.html` | `/submarine/` | 潜艇大战：Canvas + WebAudio 程序化美术/音效，桌面键位 + 移动端拖动与按钮 |
 | `games/shepherd/index.html` | `/shepherd/` | 牧羊小勇士 · 丛林回响：移动端为主的横版牧羊动作关 |
 
+**牧羊小勇士的云端表**（QW Pages 部署、即 SupabaseStore 驱动时才需要；shaoym.me 走 LocalStore 免建表）：
+
+```sql
+CREATE TABLE IF NOT EXISTS game_scores (
+  id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  game text NOT NULL DEFAULT 'shepherd',
+  day text NOT NULL,                    -- 中国时区的 YYYY-MM-DD，日榜按这个切
+  hash text NOT NULL,                   -- 客户端匿名访客标识（非 IP），只用于算“我的名次”
+  name text NOT NULL DEFAULT '',        -- 榜上显示的匿名昵称（≤12 字）
+  score integer NOT NULL DEFAULT 0,
+  sheep integer NOT NULL DEFAULT 0,
+  combo integer NOT NULL DEFAULT 0,
+  secs integer NOT NULL DEFAULT 0,
+  seed bigint,
+  win boolean NOT NULL DEFAULT false,
+  created_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS gs_day_idx ON game_scores (game, day, score DESC);
+CREATE TABLE IF NOT EXISTS game_assists (
+  token text PRIMARY KEY,               -- 助力复活的一次性令牌
+  game text NOT NULL DEFAULT 'shepherd',
+  day text NOT NULL,
+  owner text NOT NULL,                  -- 发起人 hash：只有本人能查“是否被帮过”
+  name text NOT NULL DEFAULT '',
+  used_by text,
+  used_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now());
+```
+
+没建表也不会炸：`lib/game.js` 探测到缺表时所有接口返回 `{enabled:false}`，
+游戏端拿到后自动隐藏榜与助力入口，本地 best 照常记录。
+
 `games/` 不进部署包（打包时 `--exclude=games`），更新方式是单独 `scp` 覆盖站点目录，
 详见 `deploy/上线手册.md` 的「小游戏」一节。
 
