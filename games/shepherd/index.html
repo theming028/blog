@@ -26,7 +26,7 @@ canvas#game { position:absolute; inset:0; display:block; width:100%; height:100%
 
 /* 全屏渐变暗角由 DOM 叠一层，省掉 canvas 每帧大矩形 */
 #vignette { position:absolute; inset:0; pointer-events:none; z-index:6;
-  background:radial-gradient(ellipse at 50% 46%, rgba(0,0,0,0) 42%, rgba(0,0,0,.32) 78%, rgba(0,0,0,.62) 100%); }
+  background:radial-gradient(ellipse at 50% 46%, rgba(0,0,0,0) 52%, rgba(0,0,0,.2) 84%, rgba(0,0,0,.44) 100%); }
 
 /* ============ HUD ============ */
 #hud { position:absolute; left:0; right:0; top:0; z-index:20; pointer-events:none;
@@ -138,7 +138,9 @@ canvas#game { position:absolute; inset:0; display:block; width:100%; height:100%
 #boardBox .bhead { font-size:10.5px; color:#9fc3a8; letter-spacing:1px; border-bottom:1px solid rgba(200,235,205,.16); padding-bottom:5px; margin-bottom:3px; }
 #boardBox .empty { color:#9fc3a8; font-size:12px; text-align:center; line-height:2.4; }
 /* 武器分键：三个小方块横排在出拳键上方，未解锁置灰 */
-#wepRow { position:absolute; right:calc(14px + env(safe-area-inset-right)); bottom:calc(112px + env(safe-area-inset-bottom)); z-index:18; display:flex; gap:8px; pointer-events:none; }
+/* 三个武器小方块要悬在两个圆形按钮之上：出拳占 30~96、吹哨占 96~150，
+     所以这一排放 164 起，谁也不压谁（评审点名的 UI 挤压） */
+#wepRow { position:absolute; right:calc(14px + env(safe-area-inset-right)); bottom:calc(164px + env(safe-area-inset-bottom)); z-index:18; display:flex; gap:8px; pointer-events:none; }
 .wep { width:42px; height:42px; border-radius:10px; pointer-events:auto; cursor:pointer;
   display:flex; flex-direction:column; align-items:center; justify-content:center;
   font-size:15px; color:#eaf6e6; background:rgba(10,20,14,.44); border:1px solid rgba(190,235,200,.3);
@@ -204,7 +206,8 @@ canvas#game { position:absolute; inset:0; display:block; width:100%; height:100%
       <div class="tips">
         <i>左半屏拖动</i> 移动 · <i>上滑</i> 跳跃 · <i>下滑</i> 蹲下躲扑击<br>
         <i>出拳</i> 三连击可把幼兽顶退 · <i>吹哨</i> 召回散羊，但会吵醒狗熊<br>
-        救回的羊会跟着你跑；<i>队尾被叼走 = 掉勇气</i>
+        救回的羊会跟着你跑；<i>队尾被叼走 = 掉勇气</i><br>
+        <i>昼夜随时钟走</i>：正午通亮、傍晚烧成橘红、夜里萤火与月色——都是同一片林子
       </div>
       <div class="badge" id="dailyBadge" style="display:block;margin-top:14px"></div>
       <button class="bigbtn" id="btnStart">进入丛林</button>
@@ -360,29 +363,40 @@ const TERRAIN = makeValueNoise(256, 256, 24, true);
    每一章一套光照时刻：晨光 / 正午 / 雷雨 / 黎明渡口。
    ===================================================================== */
 const CHAPTERS = [
+  /* 画风改版：鲜艳明亮的春天。四章都是暖色高饱和的春日场景，
+     明暗与冷暖交给“昼夜时钟”（见 daylight()）统一叠加，章节本身不再各自定死时间。
+     petal=桃花瓣密度，wind=风强，bloom=地花密度，bug=蝴蝶数量，glow=夜里发光的萤。 */
   {
-    name: '晨光林缘', phase: '搜寻',
-    sky: ['#cfe6d8', '#8fc0a8', '#3f6b53'], sun: '#fff4d2', sunA: .55, sunAngle: .72,
-    fog: 'rgba(210,232,220,', fogA: .5, ground: ['#4c5a3c', '#2c3526'], grass: '#6f8452',
-    canopy: ['#22402f', '#16301f', '#0d2015'], shaft: .5, weather: 'none', lightTint: 'rgba(255,238,196,.16)'
+    name: '桃林小径', phase: '寻羊',
+    sky: ['#dff2ff', '#a9e3f6', '#71dba6'], sun: '#fffbe8', sunA: .5, sunAngle: .78,
+    fog: 'rgba(255,226,242,', fogA: .38, ground: ['#84bb5b', '#4b7431'], grass: '#a6dd6f',
+    canopy: ['#63ab53', '#8ad663', '#36763c'], blossom: ['#ffc7de', '#ff9dc2'],
+    shaft: .46, weather: 'bloom', lightTint: 'rgba(255,242,206,.14)',
+    petal: .7, wind: 1.0, bloom: .9, bug: 2, glow: 0
   },
   {
-    name: '蚁道深林', phase: '深入',
-    sky: ['#a8c7b8', '#5f8d70', '#22402f'], sun: '#ffe9b0', sunA: .34, sunAngle: .5,
-    fog: 'rgba(180,206,190,', fogA: .34, ground: ['#3f4a31', '#232b1d'], grass: '#5c7044',
-    canopy: ['#1b3626', '#122717', '#081610'], shaft: .78, weather: 'none', lightTint: 'rgba(255,232,180,.22)'
+    name: '花田深处', phase: '深入',
+    sky: ['#cdeeff', '#96dbf9', '#5fd6ae'], sun: '#fffdf0', sunA: .62, sunAngle: .95,
+    fog: 'rgba(230,248,232,', fogA: .26, ground: ['#8ec45f', '#517d36'], grass: '#b6e77b',
+    canopy: ['#5aac4d', '#93da65', '#2d7239'], blossom: ['#ffdcef', '#ffb4d6'],
+    shaft: .38, weather: 'bloom', lightTint: 'rgba(255,248,220,.12)',
+    petal: .45, wind: 1.25, bloom: 1.35, bug: 4, glow: 0
   },
   {
-    name: '雷雨溪谷', phase: '暴雨',
-    sky: ['#5d6f74', '#3a4a52', '#1b2530'], sun: '#b9cdd6', sunA: .12, sunAngle: .3,
-    fog: 'rgba(150,170,180,', fogA: .3, ground: ['#3a4046', '#1f242a'], grass: '#4a5a4a',
-    canopy: ['#22303a', '#141d26', '#0a1015'], shaft: .18, weather: 'rain', lightTint: 'rgba(150,190,210,.14)'
+    name: '柳岸风岗', phase: '风起',
+    sky: ['#d8f5ff', '#a2ecff', '#66dfc0'], sun: '#fffce9', sunA: .55, sunAngle: .7,
+    fog: 'rgba(236,250,242,', fogA: .3, ground: ['#84b857', '#487231'], grass: '#aae073',
+    canopy: ['#5fae52', '#9ad869', '#2b7138'], blossom: ['#ffcee7', '#ff9cc6'],
+    shaft: .42, weather: 'bloom', lightTint: 'rgba(255,244,214,.13)',
+    petal: 1.15, wind: 2.2, bloom: 1.0, bug: 3, glow: 0
   },
   {
-    name: '黎明渡口', phase: '归途',
-    sky: ['#f6d9b4', '#d9a17f', '#6a4a63'], sun: '#fff1cf', sunA: .68, sunAngle: .88,
-    fog: 'rgba(246,220,190,', fogA: .42, ground: ['#5b5142', '#332e28'], grass: '#8b8360',
-    canopy: ['#4a3a4a', '#2f2436', '#1a1524'], shaft: .62, weather: 'motes', lightTint: 'rgba(255,206,150,.24)'
+    name: '萤火归途', phase: '归途',
+    sky: ['#d7ecff', '#a9dcf6', '#77cdb6'], sun: '#fdf6ff', sunA: .4, sunAngle: .5,
+    fog: 'rgba(224,236,255,', fogA: .3, ground: ['#74a352', '#41612f'], grass: '#8fc664',
+    canopy: ['#4f9450', '#78bf5c', '#2a6135'], blossom: ['#ffcae4', '#ef9fc4'],
+    shaft: .3, weather: 'bloom', lightTint: 'rgba(236,240,255,.12)',
+    petal: .5, wind: .8, bloom: .8, bug: 0, glow: 1
   }
 ];
 
@@ -417,6 +431,23 @@ function paintSky(g, ch, w, h) {
   const halo = g.createRadialGradient(sx, sy, 0, sx, sy, h * .8);
   halo.addColorStop(0, ch.sun); halo.addColorStop(.16, 'rgba(255,244,214,.34)'); halo.addColorStop(1, 'rgba(255,255,255,0)');
   g.globalAlpha = ch.sunA; g.fillStyle = halo; g.fillRect(0, 0, w, h); g.globalAlpha = 1;
+  /* 春天要有几朵松快的白云：不是写实积云，而是三四片柔边椭圆叠出来的薄云，
+     越靠地平越淡，避免和远山抢对比 */
+  const rc = mulberry32(qsSeed + 7717);
+  for (let i = 0; i < 7; i++) {
+    const cx = rc() * w, cy = h * (.06 + rc() * .26), cw = w * (.05 + rc() * .07);
+    g.globalAlpha = .34 + rc() * .3;
+    for (let k = 0; k < 4; k++) {
+      const ox = (k - 1.5) * cw * .38, oy = Math.sin(k * 1.7 + i) * cw * .1;
+      const cg2 = g.createRadialGradient(cx + ox, cy + oy, 0, cx + ox, cy + oy, cw * .55);
+      cg2.addColorStop(0, 'rgba(255,255,255,.95)');
+      cg2.addColorStop(.6, 'rgba(255,255,255,.4)');
+      cg2.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = cg2;
+      g.beginPath(); g.ellipse(cx + ox, cy + oy, cw * .55, cw * .22, 0, 0, TAU); g.fill();
+    }
+  }
+  g.globalAlpha = 1;
 }
 
 function paintFar(g, ch, w, h) {
@@ -438,13 +469,13 @@ function paintFar(g, ch, w, h) {
     }
     g.lineTo(w, h); g.closePath();
     const gg = g.createLinearGradient(0, base - amp, 0, base + h * .12);
-    const mix = ['#7d9aa8', '#5f7f8c', '#42606e'][k];
+    const mix = ['#a8d3b6', '#8cc3a2', '#6fb290'][k];
     gg.addColorStop(0, mix); gg.addColorStop(1, ch.sky[2]);
     g.globalAlpha = .55 + depth * .3;
     g.fillStyle = gg; g.fill();
     // 山体的阴面：同一脊线下方压一条暗带，山才有背光而不是纸片
-    g.globalAlpha = .22;
-    g.fillStyle = '#1b2b30';
+    g.globalAlpha = .18;
+    g.fillStyle = '#2f5b46';
     g.beginPath();
     g.moveTo(0, base + amp);
     for (let sx = 0; sx <= w; sx += 20) g.lineTo(sx, base + Math.sin(sx * .004 + k * 2.2) * amp + amp * .35);
@@ -458,7 +489,7 @@ function paintFar(g, ch, w, h) {
 }
 
 /* 单棵树的剪影：树干锥度 + 枝杈递归 + 团块状树冠（非圆形气泡，用多边形抖动） */
-function treeShape(g, x, baseY, hgt, seedRnd, crownCol, edgeCol) {
+function treeShape(g, x, baseY, hgt, seedRnd, crownCol, edgeCol, blossomA, blossomB) {
   const r = mulberry32(seedRnd);
   const trunkW = hgt * (.055 + r() * .02);
   g.save();
@@ -509,6 +540,23 @@ function treeShape(g, x, baseY, hgt, seedRnd, crownCol, edgeCol) {
     cg.addColorStop(0, crownCol); cg.addColorStop(1, edgeCol);
     g.fillStyle = cg; g.fill();
   }
+  /* 花簇：叠在树冠外缘的一圈粉白，随机几团——春天最有辨识度的一笔。
+     用比叶团更亮、更小的椭圆叠两层，亮面偏左上，和章内光向一致 */
+  if (blossomA) {
+    const nb = 4 + Math.floor(r() * 5);
+    for (let i = 0; i < nb; i++) {
+      const a = r() * TAU;
+      const d = cr * (.55 + r() * .55);
+      const bxp = cx + Math.cos(a) * d, byp = cy + Math.sin(a) * d * .6 - cr * .1;
+      const br2 = cr * (.26 + r() * .22);
+      const bg = g.createRadialGradient(bxp - br2 * .3, byp - br2 * .35, br2 * .1, bxp, byp, br2);
+      bg.addColorStop(0, blossomA); bg.addColorStop(1, blossomB || blossomA);
+      g.globalAlpha = .8;
+      g.fillStyle = bg;
+      g.beginPath(); g.ellipse(bxp, byp, br2, br2 * .8, r() * TAU, 0, TAU); g.fill();
+    }
+    g.globalAlpha = 1;
+  }
 }
 
 function paintMid(g, ch, w, h) {
@@ -521,7 +569,8 @@ function paintMid(g, ch, w, h) {
       const hgt = h * (row === 0 ? rr(.22, .34) : rr(.14, .24));
       g.globalAlpha = row === 0 ? .9 : .6;
       treeShape(g, x, base + row * h * .04, hgt, 1000 + i * 37 + row * 7,
-        row === 0 ? ch.canopy[0] : ch.canopy[1], ch.canopy[2]);
+        row === 0 ? ch.canopy[0] : ch.canopy[1], ch.canopy[2],
+        ch.blossom && (row === 0 || i % 2 === 0) ? ch.blossom[0] : null, ch.blossom && ch.blossom[1]);
     }
   }
   g.globalAlpha = 1;
@@ -703,6 +752,28 @@ function paintGround(g, ch, w, h) {
     sh.addColorStop(0, 'rgba(190,215,225,.16)'); sh.addColorStop(1, 'rgba(190,215,225,0)');
     g.fillStyle = sh; g.fillRect(0, gy, w, 44);
   }
+  /* 野花：成小片聚集（同一簇色相一致），粉/白/黄三色，
+     数量随章内 bloom 密度走——春天要有“花开成片”而不是随机撒点 */
+  if (ch.bloom) {
+    const palettes = [['#ffd2e4', '#ff9ec6'], ['#ffffff', '#f2e6d0'], ['#ffe89a', '#ffd25e'], ['#cfe4ff', '#9ec6ff']];
+    for (let cl = 0; cl < Math.round(40 * ch.bloom); cl++) {
+      const cx0 = r() * w, cy0 = groundEdge(r() * w) + 8 + r() * (h - gy) * .5;
+      const pal = palettes[Math.floor(r() * 4)];
+      const n = 4 + Math.floor(r() * 7);
+      for (let i = 0; i < n; i++) {
+        const fx = cx0 + rr(-16, 16), fy = cy0 + rr(-5, 5);
+        const fr = 2.2 + r() * 2.8;
+        g.globalAlpha = .62 + r() * .34;
+        g.fillStyle = r() < .8 ? pal[0] : pal[1];
+        g.beginPath(); g.ellipse(fx, fy, fr, fr * .72, r() * TAU, 0, TAU); g.fill();
+        if (r() < .3) {                       // 一点花蕊，放大看才不至于像色斑
+          g.fillStyle = 'rgba(200,150,60,.55)';
+          g.beginPath(); g.arc(fx, fy, fr * .3, 0, TAU); g.fill();
+        }
+      }
+    }
+    g.globalAlpha = 1;
+  }
   // 颗粒（保留材质噪声）
   g.globalAlpha = .16; g.fillStyle = g.createPattern(GRAIN, 'repeat');
   g.fillRect(0, gy - 8, w, h - gy + 8); g.globalAlpha = 1;
@@ -871,7 +942,7 @@ function resize() {
   cvs.width = Math.round(W * DPR); cvs.height = Math.round(H * DPR);
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   GROUND = Math.round(H * .78);
-  if (ch) buildScene(ch);
+  if (ch) { buildScene(ch); rebuildSpring(); }   // 草浪/星空/花瓣都是屏幕坐标，换尺寸必须重建
 }
 
 /* ---------- 体积光（逐帧，随相机微动，是“真实感”里最便宜的一招） ---------- */
@@ -927,6 +998,13 @@ function litBox(bx, by, bw, bh, fn) {
   const bg = SH_G.createLinearGradient(0, by + bh, 0, by + bh * .6);
   bg.addColorStop(0, 'rgba(120,160,120,.28)'); bg.addColorStop(1, 'rgba(0,0,0,0)');
   SH_G.fillStyle = bg; SH_G.fillRect(bx, by, bw, bh);
+  /* 夜里（光照 < .55）补一层冷色月光轮廓：否则角色和背景一起被压成灰糊。
+     只作用于本框内已有像素（source-atop），不会在人物外面留亮边。 */
+  if (ch && ch.sunAngle !== undefined && daylight().light < .55) {
+    const ml = SH_G.createLinearGradient(bx + bw, by, bx, by + bh);
+    ml.addColorStop(0, 'rgba(196,214,255,.5)'); ml.addColorStop(.55, 'rgba(150,170,220,.16)'); ml.addColorStop(1, 'rgba(0,0,0,0)');
+    SH_G.fillStyle = ml; SH_G.fillRect(bx, by, bw, bh);
+  }
   SH_G.globalCompositeOperation = 'source-over';
   ctx.drawImage(SH_C, 0, 0, w, h, bx, by, bw, bh);
 }
@@ -1120,7 +1198,9 @@ function drawStrayMarkers(g) {
     const isLeft = sx < 24;
     const edge = isLeft ? 26 : W - 26;
     const k = isLeft ? slot.left++ : slot.right++;
-    const y = H * .40 + k * 34 + Math.sin(G.t * 3 + o.seed) * 4;
+    /* 放在画面上半区（.18H 起）：右下角是武器键 + 两个圆形按钮，
+       之前贴在 .40H 与它们只隔几像素，评审直接点名“UI 挤压” */
+    const y = H * .18 + k * 30 + Math.sin(G.t * 3 + o.seed) * 4;
     const hot = danger.has(o);
     // 箭头朝内：左侧用 scale(-1,1) 翻镜像。文字不能画在翻转后的坐标系里（会成镜像字）
     g.save();
@@ -1133,7 +1213,7 @@ function drawStrayMarkers(g) {
     g.fill();
     g.restore();
     g.save();
-    g.globalAlpha = .9;
+    g.globalAlpha = .96;
     g.font = '600 11px system-ui, sans-serif'; g.textAlign = isLeft ? 'left' : 'right';
     const d = Math.round(Math.abs(o.x - p.x) / 40);
     const tx = isLeft ? edge + 30 : edge - 30;
@@ -1499,6 +1579,7 @@ function makeLevel(n) {
 
   // 归栏点
   G.pen = { x: LEVEL_LEN - 90, w: 150 };
+  rebuildSpring();
 }
 function mkSheep(x, state, key) {
   return { x, y: 0, vx: 0, dir: -1, anim: rr(0, 9), seed: rr(0, 6), state, key: !!key, scale: key ? 1.12 : rr(.86, 1), carry: null, panic: 0, sx: 0, sy: 0, bob: 0 };
@@ -1933,6 +2014,7 @@ function update(dt) {
 
   /* --- 天气与粒子 --- */
   updateWeather(dt);
+  updateWind(dt); updatePetals(dt); updateBugs(dt); updateFire(dt);
   for (let i = G.parts.length - 1; i >= 0; i--) {
     const q = G.parts[i];
     q.life -= dt; q.x += q.vx * dt; q.y += q.vy * dt; q.vy += (q.g || 0) * dt;
@@ -2176,6 +2258,388 @@ function checkGoal() {
 }
 
 /* =====================================================================
+   七·五、春天与昼夜
+   画风基调：鲜艳明亮的春天（高饱和、暖色、桃花与野花）。
+   昼夜由真实时钟（中国时区）驱动：白天通透亮春景，傍晚转暖橘，
+   夜里自动压成青蓝月色 + 萤火——同一片丛林在一天里是四张脸。
+   注意：静态层（天空/远山/树/地面）在换章时预渲染，昼夜是"叠加层"，
+   不做每帧重绘，否则手机必掉帧。
+   ===================================================================== */
+/* --- 关键帧：按小时插值。veil 是夜里压在画面上的冷色，light 是总亮度 --- */
+const DL_KEYS = [
+  /* 每个关键帧：light 总亮度、warm 暖调强度、star/moon 可见度、
+     veil 压在画面上的环境色、washTop/washLow 天幕洗色（夜里整片换天） */
+  { h: 0,    light: .34, warm: 0,   star: 1,   moon: 1,   veil: [18, 26, 62],  veilA: .34, washA: .78, washTop: [8, 14, 40],   washLow: [26, 40, 78] },
+  { h: 4.5,  light: .40, warm: .05, star: .8,  moon: .8,  veil: [24, 28, 66],  veilA: .30, washA: .72, washTop: [16, 24, 58],  washLow: [52, 60, 104] },
+  { h: 6.3,  light: .70, warm: .8,  star: .08, moon: .12, veil: [80, 46, 26],  veilA: .08, washA: .5,  washTop: [96, 108, 178], washLow: [255, 176, 118] },
+  { h: 8.5,  light: .95, warm: .34, star: 0,   moon: 0,   veil: [40, 40, 30],  veilA: .02, washA: .12, washTop: [186, 226, 255], washLow: [255, 246, 224] },
+  { h: 12.5, light: 1,   warm: .18, star: 0,   moon: 0,   veil: [30, 30, 20],  veilA: 0,   washA: .06, washTop: [150, 214, 255], washLow: [214, 244, 255] },
+  { h: 16.2, light: .96, warm: .62, star: 0,   moon: 0,   veil: [58, 40, 24],  veilA: .04, washA: .34, washTop: [150, 206, 250], washLow: [255, 224, 176] },
+  { h: 17.6, light: .88, warm: .86, star: 0,   moon: .04, veil: [80, 42, 24],  veilA: .08, washA: .56, washTop: [124, 110, 190], washLow: [255, 172, 100] },
+  { h: 18.9, light: .76, warm: 1,   star: .06, moon: .14, veil: [96, 44, 24],  veilA: .13, washA: .66, washTop: [102, 84, 172], washLow: [255, 138, 74] },
+  { h: 20.4, light: .52, warm: .3,  star: .55, moon: .7,  veil: [34, 30, 72],  veilA: .26, washA: .74, washTop: [22, 30, 72],   washLow: [92, 70, 128] },
+  { h: 24,   light: .34, warm: 0,   star: 1,   moon: 1,   veil: [18, 26, 62],  veilA: .34, washA: .78, washTop: [8, 14, 40],    washLow: [26, 40, 78] }
+];
+let DL_SHIFT = 0;                 // 调试/截图用：给时钟加偏移（毫秒），不影响真实玩法
+function hourCN() {
+  /* 必须用 getUTCHours：时间戳已经 +8h 转到中国时区了，
+     再让本地 getHours() 叠一次偏移，就等于把时区算了两遍（我在 UTC+8 机器上实测错 8 小时） */
+  const d = new Date(Date.now() + 8 * 3600 * 1000 + DL_SHIFT);
+  return d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600;
+}
+const DL = { h: 12, light: 1, warm: .2, star: 0, moon: 0, veil: [30, 30, 20], veilA: 0,
+  washA: .06, washTop: [150, 214, 255], washLow: [214, 244, 255], sunT: .5, moonT: 0, name: '昼' };
+let DL_T = 0;
+function refreshDaylight() {
+  const h = hourCN();
+  let a = DL_KEYS[0], b = DL_KEYS[DL_KEYS.length - 1];
+  for (let i = 0; i < DL_KEYS.length - 1; i++) {
+    if (h >= DL_KEYS[i].h && h <= DL_KEYS[i + 1].h) { a = DL_KEYS[i]; b = DL_KEYS[i + 1]; break; }
+  }
+  const k = (h - a.h) / Math.max(.001, b.h - a.h);
+  const mix = (x, y) => x + (y - x) * k;
+  DL.h = h;
+  DL.light = mix(a.light, b.light);
+  DL.warm = mix(a.warm, b.warm);
+  DL.star = mix(a.star, b.star);
+  DL.moon = mix(a.moon, b.moon);
+  DL.veilA = mix(a.veilA, b.veilA);
+  DL.veil = [0, 1, 2].map(i => Math.round(mix(a.veil[i], b.veil[i])));
+  /* 天幕洗色：春天的高饱和天空在夜里必须整片换掉，只压暗会变成“蒙灰”。
+     washA = 洗色强度，washTop/washLow = 天顶与地平的颜色。 */
+  DL.washA = mix(a.washA, b.washA);
+  DL.washTop = [0, 1, 2].map(i => Math.round(mix(a.washTop[i], b.washTop[i])));
+  DL.washLow = [0, 1, 2].map(i => Math.round(mix(a.washLow[i], b.washLow[i])));
+  DL.sunT = clamp((h - 5.6) / 12.8, -0.05, 1.05);
+  /* 月亮：19 点从左边升起、次日 5 点半落下（跨零点，所以先做模）。
+     原来用 (h+6)%24 反推，夜里 22 点算出 0，月亮被按在地上看不见。 */
+  DL.moonT = clamp(((h + 24 - 19) % 24) / 10.5, 0, 1);
+  DL.name = h < 5.6 ? '夜' : h < 8 ? '晨' : h < 16.2 ? '昼' : h < 19.4 ? '暮' : '夜';
+  return DL;
+}
+function daylight() {
+  // 30 秒刷一次就够：一小时才走一点点，每帧算纯属浪费
+  if (performance.now() - DL_T > 30000 || DL_T === 0) { DL_T = performance.now(); refreshDaylight(); }
+  return DL;
+}
+/* --- 春风：恒定底风 + 周期阵风。阵风是"吹过"的关键，不是常值 --- */
+const WIND = { x: .4, gust: 0, nextAt: 3 };
+function updateWind(dt) {
+  WIND.nextAt -= dt;
+  if (WIND.nextAt <= 0) {
+    WIND.gust = .8 + Math.random() * 1.4;      // 一次阵风强度
+    WIND.nextAt = 4 + Math.random() * 6;
+  }
+  // 阵风用短促的起落包络，风不是突然来突然停
+  WIND.gust = Math.max(0, WIND.gust - dt * .55);
+  const base = (ch ? ch.wind : 1) || 1;
+  WIND.x = base * (.34 + Math.sin(G.t * .7) * .08 + WIND.gust * .9);
+}
+
+/* --- 桃花瓣：数量按章内密度 × 画质档 --- */
+let PETALS = [];
+function makePetals() {
+  const density = (ch && ch.petal != null ? ch.petal : .6);
+  const cap = G.q === 'high' ? 130 : G.q === 'low' ? 80 : 42;
+  const n = Math.round(cap * density * (RM ? .5 : 1));
+  PETALS = [];
+  for (let i = 0; i < n; i++) PETALS.push(newPetal(Math.random() * H));
+}
+function newPetal(y) {
+  return {
+    x: Math.random() * (W + 260) - 130, y,
+    vy: 24 + Math.random() * 52, ph: Math.random() * TAU,
+    rot: Math.random() * TAU, vr: (Math.random() * 2 - 1) * 2.6,
+    sz: 4.4 + Math.random() * 5.2,
+    c: Math.random() < .1 ? '#fff4f8' : Math.random() < .55 ? '#ffb6d2' : '#ff8ebb'
+  };
+}
+function updatePetals(dt) {
+  /* 阵风时把一部分花瓣打回顶部重撒：风一阵，花瓣就下一阵——这是“风吹过”的因果 */
+  const gusty = WIND.gust > .9;
+  for (let i = 0; i < PETALS.length; i++) {
+    const p2 = PETALS[i];
+    p2.ph += dt * 1.6;
+    p2.y += p2.vy * dt * (1 + WIND.gust * .7);
+    p2.x -= (20 + WIND.x * 110) * dt;
+    p2.rot += p2.vr * dt * (1 + WIND.gust);
+    if (p2.y > H + 12 || p2.x < -150 || (gusty && Math.random() < dt * .5)) {
+      p2.y = -10 - Math.random() * 90;
+      p2.x = Math.random() * (W + 340) - 40;
+    }
+  }
+}
+function drawPetals(g) {
+  if (!PETALS.length) return;
+  for (const p2 of PETALS) {
+    const sway = Math.sin(p2.ph) * 3;
+    g.save();
+    g.translate(p2.x + sway, p2.y);
+    g.rotate(p2.rot);
+    g.globalAlpha = .9;
+    g.fillStyle = p2.c;
+    g.beginPath();
+    // 花瓣：两瓣连在一起的扁形，比"一个椭圆"读起来像花
+    g.moveTo(0, -p2.sz * .5);
+    g.quadraticCurveTo(p2.sz * .9, -p2.sz * .35, p2.sz * .55, p2.sz * .35);
+    g.quadraticCurveTo(0, p2.sz * .6, -p2.sz * .55, p2.sz * .35);
+    g.quadraticCurveTo(-p2.sz * .9, -p2.sz * .35, 0, -p2.sz * .5);
+    g.fill();
+    g.globalAlpha = .3;
+    g.strokeStyle = '#e2819f'; g.lineWidth = .6;
+    g.beginPath(); g.moveTo(0, -p2.sz * .4); g.lineTo(0, p2.sz * .4); g.stroke();
+    g.restore();
+  }
+  g.globalAlpha = 1;
+}
+
+/* --- 蝴蝶：只在亮天出现，沿正弦乱飞，翅膀按频率扇动 --- */
+let BUGS = [];
+function makeBugs() {
+  const n = (ch && ch.bug) || 0;
+  BUGS = [];
+  for (let i = 0; i < n; i++) {
+    BUGS.push({ x: Math.random() * W, y: GROUND - 60 - Math.random() * 140,
+      ph: Math.random() * TAU, sp: .5 + Math.random() * .7,
+      c1: ['#ffd25e', '#fff0a8', '#ffb3d1'][Math.floor(Math.random() * 3)], sz: 5 + Math.random() * 3 });
+  }
+}
+function updateBugs(dt) {
+  for (const b of BUGS) {
+    b.ph += dt * 2.2;
+    b.x -= (10 + WIND.x * 40) * dt * b.sp;
+    b.y += Math.sin(b.ph * 1.4) * 26 * dt;
+    if (b.x < -30) { b.x = W + 20; b.y = GROUND - 60 - Math.random() * 150; }
+  }
+}
+function drawBugs(g) {
+  if (daylight().light < .55) return;           // 夜里蝴蝶回窝了
+  for (const b of BUGS) {
+    const flap = Math.abs(Math.sin(b.ph * 3));
+    g.save(); g.translate(b.x, b.y);
+    g.globalAlpha = .92;
+    g.fillStyle = b.c1;
+    g.beginPath(); g.ellipse(-b.sz * .5 * flap, -b.sz * .2, b.sz * .62 * flap + .8, b.sz * .5, -.3, 0, TAU); g.fill();
+    g.beginPath(); g.ellipse(b.sz * .5 * flap, -b.sz * .2, b.sz * .62 * flap + .8, b.sz * .5, .3, 0, TAU); g.fill();
+    g.strokeStyle = 'rgba(60,40,20,.8)'; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(0, -b.sz * .5); g.lineTo(0, b.sz * .4); g.stroke();
+    g.restore();
+  }
+  g.globalAlpha = 1;
+}
+
+/* --- 萤火：夜间（或第 4 章）在近地处明灭 --- */
+let FIRE = [];
+function makeFire() {
+  const cap = G.q === 'high' ? 20 : G.q === 'low' ? 12 : 6;
+  FIRE = [];
+  for (let i = 0; i < cap; i++) {
+    FIRE.push({ x: Math.random() * (W + 200) - 100, y: GROUND - 20 - Math.random() * 130,
+      ph: Math.random() * TAU, sp: .5 + Math.random(), r: 1.4 + Math.random() * 1.6 });
+  }
+}
+function updateFire(dt) {
+  for (const q of FIRE) {
+    q.ph += dt * q.sp;
+    q.x -= (6 + WIND.x * 16) * dt;
+    q.y += Math.sin(q.ph * .8) * 10 * dt;
+    if (q.x < -120) q.x = W + 60;
+  }
+}
+function drawFire(g) {
+  const dl = daylight();
+  // 第 4 章自带夜光属性，其他章只在真的天黑后点亮
+  const amount = ch && ch.glow ? 1 : clamp((0.62 - dl.light) / 0.34, 0, 1);
+  if (amount <= .02) return;
+  g.save();
+  g.globalCompositeOperation = 'screen';
+  for (const q of FIRE) {
+    const blink = .35 + .65 * Math.max(0, Math.sin(q.ph * 2.1));
+    g.globalAlpha = amount * blink;
+    const gg = g.createRadialGradient(q.x, q.y, 0, q.x, q.y, q.r * 5);
+    gg.addColorStop(0, 'rgba(255,246,168,.95)');
+    gg.addColorStop(.4, 'rgba(190,255,170,.35)');
+    gg.addColorStop(1, 'rgba(190,255,170,0)');
+    g.fillStyle = gg;
+    g.beginPath(); g.arc(q.x, q.y, q.r * 5, 0, TAU); g.fill();
+  }
+  g.restore();
+}
+
+/* --- 天幕洗色：夜里/黄昏把整片天空换色，而不是只压暗（只压暗会变“蒙灰”） --- */
+function drawSkyWash(g) {
+  const dl = daylight();
+  if (dl.washA < .02) return;
+  g.save();
+  g.globalAlpha = dl.washA;
+  const wg = g.createLinearGradient(0, 0, 0, H * .78);
+  wg.addColorStop(0, `rgb(${dl.washTop[0]},${dl.washTop[1]},${dl.washTop[2]})`);
+  wg.addColorStop(.72, `rgb(${dl.washLow[0]},${dl.washLow[1]},${dl.washLow[2]})`);
+  wg.addColorStop(1, `rgba(${dl.washLow[0]},${dl.washLow[1]},${dl.washLow[2]},.6)`);
+  g.fillStyle = wg;
+  g.fillRect(0, 0, W, H * .8);
+  g.restore();
+}
+
+/* --- 星空 + 日/月：画在远山之后，山会真正挡住它们 --- */
+let STARS = [];
+function makeStars() {
+  STARS = [];
+  const n = 110;
+  for (let i = 0; i < n; i++) STARS.push({ x: Math.random() * W, y: Math.random() * H * .55, r: Math.random() * 1.3 + .3, ph: Math.random() * TAU });
+}
+function drawSkyBodies(g, t) {
+  const dl = daylight();
+  if (dl.star > .02) {
+    g.save();
+    for (const st of STARS) {
+      g.globalAlpha = dl.star * (.35 + .65 * Math.abs(Math.sin(st.ph + t * .8)));
+      g.fillStyle = '#eaf2ff';
+      g.beginPath(); g.arc(st.x, st.y, st.r, 0, TAU); g.fill();
+    }
+    g.restore();
+  }
+  /* 月亮：整盘 + 两处月海暗斑。
+     之前用 destination-out“咬”出月牙，那是在主画布上挖洞——把已经画好的天空擦穿了。 */
+  if (dl.moon > .05) {
+    const mt = clamp(dl.moonT, 0, 1);
+    const mx = W * (.14 + mt * .62), my = H * (.46 - Math.sin(mt * Math.PI) * .3);
+    g.save();
+    g.globalAlpha = dl.moon;
+    const halo = g.createRadialGradient(mx, my, 0, mx, my, 76);
+    halo.addColorStop(0, 'rgba(228,238,255,.55)'); halo.addColorStop(.35, 'rgba(200,220,255,.16)'); halo.addColorStop(1, 'rgba(200,220,255,0)');
+    g.fillStyle = halo; g.beginPath(); g.arc(mx, my, 76, 0, TAU); g.fill();
+    const mg = g.createRadialGradient(mx - 5, my - 5, 2, mx, my, 16);
+    mg.addColorStop(0, '#ffffff'); mg.addColorStop(.7, '#e9eefc'); mg.addColorStop(1, '#c9d3ec');
+    g.fillStyle = mg; g.beginPath(); g.arc(mx, my, 15, 0, TAU); g.fill();
+    g.globalAlpha = dl.moon * .28; g.fillStyle = '#7f8cb0';
+    g.beginPath(); g.ellipse(mx - 4, my - 3, 4.2, 3.2, .4, 0, TAU); g.fill();
+    g.beginPath(); g.ellipse(mx + 5, my + 4, 2.6, 2, -.3, 0, TAU); g.fill();
+    g.restore();
+  }
+  /* 太阳：位置/颜色随时辰走；黄昏落到画面右下并烧成橘红，天亮前不再画 */
+  if (dl.light > .48) {
+    const st = clamp(dl.sunT, 0, 1);
+    /* 抛物线弧：两端正好落在山脊线（.50H）上——不是沉到地平以下。
+       之前取 .82H，太阳被地面层整个盖住，黄昏截图里“太阳消失”就是这个原因。 */
+    const sx = W * (.1 + st * .62);
+    const sy = H * (.52 - Math.sin(st * Math.PI) * .34);
+    const hot = dl.warm > .55;                       // 晨昏的低角度太阳
+    g.save();
+    g.globalAlpha = clamp((dl.light - .48) * 1.9, 0, 1) * .95;
+    const halo = g.createRadialGradient(sx, sy, 0, sx, sy, hot ? 130 : 92);
+    halo.addColorStop(0, hot ? 'rgba(255,196,120,.95)' : 'rgba(255,252,236,.9)');
+    halo.addColorStop(.3, hot ? 'rgba(255,170,96,.4)' : 'rgba(255,246,208,.3)');
+    halo.addColorStop(1, 'rgba(255,244,200,0)');
+    g.fillStyle = halo; g.beginPath(); g.arc(sx, sy, hot ? 130 : 92, 0, TAU); g.fill();
+    const low = sy > H * .4;                       // 贴近山脊：更大更红，大气折射的感觉
+    g.fillStyle = low ? '#ff7a3e' : hot ? '#ffb462' : '#fffbe8';
+    g.beginPath(); g.arc(sx, sy, low ? 22 : hot ? 16 : 13, 0, TAU); g.fill();
+    // 落山时压一道贴地的余晖，否则圆盘虽然在了但和山脊脱节
+    if (low) {
+      g.globalAlpha *= .5;
+      const rg2 = g.createLinearGradient(0, sy - 6, 0, sy + H * .1);
+      rg2.addColorStop(0, 'rgba(255,120,60,.5)'); rg2.addColorStop(1, 'rgba(255,120,60,0)');
+      g.fillStyle = rg2; g.fillRect(0, sy - 6, W, H * .1);
+    }
+    g.restore();
+  }
+}
+
+/* --- 前景草浪：贴画面底边的一排草，随阵风一起倒，"春风吹过"看得见 --- */
+let GRASS = [];
+function makeGrass() {
+  /* 两排：后排矮而密、颜色偏冷；前排高而疏、带花头，摆幅更大——
+     “浪”要靠分层与相位差读出来，单排竖线只会像栅栏 */
+  GRASS = [];
+  const rows = [
+    { n: Math.round(W / 15), h0: 14, h1: 30, sway: .5, dark: .75, flower: .06 },
+    { n: Math.round(W / 26), h0: 26, h1: 54, sway: 1.0, dark: 1,   flower: .22 }
+  ];
+  rows.forEach((row, ri) => {
+    for (let i = 0; i < row.n; i++) {
+      GRASS.push({
+        x: i * (W / row.n) + Math.random() * 10, h: row.h0 + Math.random() * (row.h1 - row.h0),
+        ph: Math.random() * TAU, c: Math.random(), row: ri,
+        sway: row.sway, dark: row.dark, flower: Math.random() < row.flower ? (Math.random() < .5 ? '#ffd0e2' : '#fff2c8') : null
+      });
+    }
+  });
+}
+function drawGrass(g) {
+  const base = H + 4;
+  for (const b of GRASS) {
+    /* 相位沿 x 推进 → 一整片草按波峰依次倒，才叫浪；阵风越强摆得越狠 */
+    const phase = G.t * 1.7 + b.x * .045 + b.ph * .3;
+    const sway = (Math.sin(phase) * 3.2 + WIND.x * 13 * b.sway);
+    const top = base - b.h;
+    g.strokeStyle = b.row === 0
+      ? `rgba(64,106,60,${.5 + b.dark * .2})`
+      : (b.c < .4 ? 'rgba(96,158,72,.9)' : b.c < .75 ? 'rgba(122,186,86,.9)' : 'rgba(70,124,54,.92)');
+    g.lineWidth = b.row === 0 ? 1.6 + b.c : 2.2 + b.c * 1.6;
+    g.beginPath();
+    g.moveTo(b.x, base);
+    g.quadraticCurveTo(b.x + sway * .35, base - b.h * .55, b.x + sway, top);
+    g.stroke();
+    if (b.flower) {                    // 前排偶一朵野花，春天在前景也要有交代
+      g.fillStyle = b.flower;
+      g.beginPath(); g.ellipse(b.x + sway, top, 2.6, 2.1, 0, 0, TAU); g.fill();
+    }
+  }
+}
+
+/* --- 阵风的可见化：几道横扫的半透明条带 --- */
+function drawGust(g) {
+  if (WIND.gust < .12) return;
+  const k = WIND.gust / 2.2;
+  g.save();
+  g.globalCompositeOperation = 'screen';
+  g.globalAlpha = .1 * k;
+  g.strokeStyle = '#ffffff';
+  for (let i = 0; i < 5; i++) {
+    const y = H * (.2 + i * .14) + Math.sin(G.t * 2 + i) * 10;
+    const x = ((G.t * 460 + i * 220) % (W + 420)) - 200;
+    g.lineWidth = 1.4;
+    g.beginPath();
+    g.moveTo(x, y);
+    g.quadraticCurveTo(x - 60 * k, y - 8 * k, x - 150 * k, y + 2);
+    g.stroke();
+  }
+  g.restore();
+}
+
+/* --- 昼夜叠加层：夜里压冷色、黄昏压暖色；亮度也在这里统一收 --- */
+function drawDayNight(g) {
+  const dl = daylight();
+  if (dl.veilA > .005) {
+    g.save();
+    g.fillStyle = `rgba(${dl.veil[0]},${dl.veil[1]},${dl.veil[2]},${dl.veilA})`;
+    g.fillRect(0, 0, W, H);
+    g.restore();
+  }
+  if (dl.warm > .05) {                        // 晨昏的暖调斜光：从太阳那一侧压进来
+    g.save();
+    g.globalCompositeOperation = 'screen';
+    g.globalAlpha = dl.warm * .13;
+    const wg = g.createLinearGradient(0, 0, W, H * .6);
+    wg.addColorStop(0, dl.h < 12 ? '#ffcf8e' : '#ffb46e');
+    wg.addColorStop(1, 'rgba(255,240,210,0)');
+    g.fillStyle = wg; g.fillRect(0, 0, W, H);
+    g.restore();
+  }
+  if (dl.light < .9) {                        // 整体亮度：夜里不靠滤镜，靠压暗一层
+    g.save();
+    g.globalAlpha = (0.9 - dl.light) * .28;
+    g.fillStyle = '#060a16';
+    g.fillRect(0, 0, W, H);
+    g.restore();
+  }
+}
+function rebuildSpring() {
+  makePetals(); makeBugs(); makeFire(); makeGrass(); makeStars();
+}
+
+/* =====================================================================
    八、渲染
    ===================================================================== */
 function drawProp(pr) {
@@ -2309,6 +2773,8 @@ function drawWorld() {
     if (off + L.w * 2 < W) ctx.drawImage(L.c, 0, 0, L.c.width, L.c.height, off + L.w * 2, 0, L.w, L.h);
   };
   blit(layers.far, .12);
+  drawSkyWash(ctx);
+  drawSkyBodies(ctx, t);
   blit(layers.mid, .42);
   ctx.save();
   if (cam.shake && !RM) ctx.translate(rr(-cam.shake, cam.shake) * .4, rr(-cam.shake, cam.shake) * .3);
@@ -2336,14 +2802,22 @@ function drawWorld() {
   }
   drawList.push({
     x: p.x, f: () => {
+      /* 夜里主角比羊难读：身后压暗不够，再补一层从右上打来的冷月光 */
+      if (daylight().light < .6) {
+        ctx.save(); ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha = .22 * (0.6 - daylight().light) / 0.6;
+        const rg = ctx.createRadialGradient(p.sx + 14, p.sy - 56, 2, p.sx + 14, p.sy - 56, 52);
+        rg.addColorStop(0, '#cfe0ff'); rg.addColorStop(1, 'rgba(207,224,255,0)');
+        ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(p.sx + 14, p.sy - 56, 52, 0, TAU); ctx.fill();
+        ctx.restore();
+      }
       // 受击时半透明闪烁（不整帧跳过，否则主角会在截图里“消失”）
       if (p.invul > 0) ctx.globalAlpha = .55 + Math.sin(t * 26) * .18;
       litBox(p.sx - 48, p.sy - 100, 96, 104, () => drawDavid(p));
       ctx.globalAlpha = 1;
     }
-  });  /* 主体可读性（四轮）：不用“人身后一圈亮圆”（评审：像气泡），也不做整帧跳过。
-     改为把他脚下与身后的地面压暗一点点——真实镜头是靠对比把主体从背景里“推”出来。
-     雷雨章整体压暗时，少年靠 litBox 的受光面 + 这层底影仍然读得出。 */
+  });
+  /* 主体可读性：不在人身上盖亮圆（会像气泡），而是把他脚下与身后的地面压暗，
+     靠对比把人从背景里“推”出来；夜里另有一层冷月光轮廓（见上）。 */
   if (G.state === 'playing' || G.state === 'paused') {
     ctx.save();
     ctx.globalCompositeOperation = 'multiply';
@@ -2376,7 +2850,13 @@ function drawWorld() {
   drawLightShafts(ctx, t);
   drawStormClouds(ctx);
   drawWeather(ctx);
+  drawGrass(ctx);
+  drawPetals(ctx);
+  drawBugs(ctx);
+  drawGust(ctx);
   sceneGrade(ctx);
+  drawDayNight(ctx);
+  drawFire(ctx);
 
   // 落单羊方向指示：只在屏幕外或有敌人靠近时出现，不做常驻光晕（评审：像误加的选中环）
   drawStrayMarkers(ctx);
@@ -2409,8 +2889,9 @@ function syncHud() {
   hudEl.fill.style.width = clamp((G.rescued / Math.max(1, G.need)) * 100, 0, 100) + '%';
   hudEl.life.textContent = Math.max(0, G.courage);
   hudEl.lvl.textContent = G.level;
-  hudEl.phase.textContent = G.boss && !G.boss.dead ? '狮王'
+  const ph = G.boss && !G.boss.dead ? '狮王'
     : (G.rescued >= G.need && G.sheep.every(o => o.state === 'follow') ? '归栏' : ch.phase);
+  hudEl.phase.textContent = ph + ' · ' + daylight().name;
   const s = Math.floor(G.elapsed);
   hudEl.time.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   if (G.combo >= 2) { hudEl.comboWrap.style.display = ''; hudEl.combo.textContent = '×' + G.combo; }
@@ -2824,10 +3305,11 @@ orientTip();
   G.sheep = [mkSheep(560, 'follow'), mkSheep(600, 'follow'), mkSheep(650, 'follow')];
   G.props = [{ k: 'rock', x: 500, s: 1 }, { k: 'bush', x: 700, s: 1.2 }, { k: 'fern', x: 820, s: 1 }];
   cam.x = 340; p.x = 640; p.sx = p.x - cam.x; p.sy = GROUND;
+  rebuildSpring();
   drawWorld();
 })();
 /* 二期收尾：静音偏好、武器键初始态、好友助力链接的自动核销 */
-$('dailyBadge').textContent = `今日丛林 · ${DAY_LABEL} —— 全站同一天玩同一片丛林，玩完上榜`;
+  $('dailyBadge').textContent = '今日丛林 · ' + DAY_LABEL + ' · 现在是' + daylight().name + '色 —— 全站同一片春天，玩完上榜';
 try { if (localStorage.getItem('sw_dv_mute') === '1') { G.sound = false; A.mute(true); $('btnSound').textContent = '×'; $('btnSound').style.opacity = .45; } } catch (e) {}
 paintWepChips();
 handleReviveParam();
