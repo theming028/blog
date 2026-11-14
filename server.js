@@ -14,6 +14,7 @@ const { seedIfEmpty } = require('./lib/seed');
 const { migrateSnapshotToCloud } = require('./lib/migrate');
 const { screenComment } = require('./lib/spam');
 const visit = require('./lib/visit');
+const gameApi = require('./lib/game');
 const seo = require('./lib/seo');
 const push = require('./lib/push');
 // 帖子/评论的 HTML 生成函数：浏览器（public/js/feed.js）与服务端 SSR 共用这一份，
@@ -684,6 +685,13 @@ const secureSuffix = (req) => (isHttps(req) ? '; Secure' : '');
 async function handleApi(req, res, pathname, query) {
   const method = req.method;
   const authed = isAdmin(req);
+
+  // 小游戏公开接口（日榜 / 助力复活）：字段校验与限流都在 lib/game.js 里，
+  // 限流键用 socket IP（与 /api/track 同一层，X-Forwarded-For 可伪造所以不用它）。
+  // 必须排在 adminOnly 判定之前——这些是访客接口，没登录也要能用。
+  if (pathname.startsWith('/api/game/')) {
+    return gameApi.handleGame(store, req, res, pathname, query, clientIp(req));
+  }
 
   // 鉴权接口（公开）
   if (pathname === '/api/login' && method === 'POST') {
