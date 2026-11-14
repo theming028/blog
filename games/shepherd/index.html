@@ -10,7 +10,7 @@
 <meta property="og:type" content="website">
 <meta property="og:title" content="牧羊小勇士 · 丛林回响 | 一拇指把羊群赶回家">
 <meta property="og:description" content="长老说：不用剑——你把羊群带回来，就把力量带回来了。横版牧羊动作关，手机上一条拇指就能玩。">
-<meta property="og:image" content="https://shaoym.me/shepherd/og.png">
+<meta property="og:image" content="https://shaoym.me/shepherd/og.jpg">
 <meta name="description" content="牧羊小勇士 · 丛林回响：移动端横版牧羊动作小游戏。羊群既是血量也是推力，吹哨召回散羊但会吵醒狗熊。">
 <!-- 内联 1px 图标：省掉一次 favicon 404（微信里刷新日志会多一条红字） -->
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23183a26'/%3E%3Cellipse cx='16' cy='17' rx='9' ry='7' fill='%23eaf3e2'/%3E%3Ccircle cx='23' cy='14' r='3.4' fill='%232f271f'/%3E%3C/svg%3E">
@@ -42,7 +42,7 @@ canvas#game { position:absolute; inset:0; display:block; width:100%; height:100%
 #flockBar { width:112px; height:5px; border-radius:3px; background:rgba(255,255,255,.14); overflow:hidden; }
 /* 空进度条会被读成“这是什么”（四轮评审），补一条小标签 */
 .barwrap { display:flex; align-items:center; gap:7px; }
-.barlab { font-size:9.5px; letter-spacing:.6px; color:rgba(226,240,226,.62); text-shadow:0 1px 2px rgba(0,0,0,.6); }
+.barlab { font-size:9.5px; letter-spacing:.6px; color:rgba(238,248,238,.9); text-shadow:0 1px 2px rgba(0,0,0,.9), 0 0 6px rgba(0,0,0,.55); }
 #flockFill { height:100%; width:0; border-radius:3px; background:linear-gradient(90deg,#8fd6a7,#eaf6df); transition:width .28s ease; }
 #combo { color:#ffd27a; font-weight:700; }
 #hudBtns { position:absolute; top:calc(8px + env(safe-area-inset-top)); right:12px; z-index:22; display:flex; gap:8px; }
@@ -492,9 +492,39 @@ function paintCanopyTop(g, ch, w, h) {
   g.moveTo(0, 0); g.lineTo(w, 0);
   for (let x = w; x >= 0; x -= 16) g.lineTo(x, baseLine(x));
   g.closePath();
-  const cg = g.createLinearGradient(0, 0, 0, h * .18);
-  cg.addColorStop(0, ch.canopy[2]); cg.addColorStop(1, ch.canopy[1]);
+  /* 五轮：一整块不透明的深色剪影会被读成“挂了块黑布”。
+     真实树冠是半透明的一层层叶，中间还有漏光的洞，所以：
+     ①本体做“上实下透”的渐变；②用 destination-out 挖几个柔和的漏光洞；
+     ③底缘之外再撒一层半透明叶簇，把硬边打散。 */
+  const cg = g.createLinearGradient(0, 0, 0, h * .24);
+  cg.addColorStop(0, rgba(hexRgb(ch.canopy[2]), .96));
+  cg.addColorStop(.55, rgba(hexRgb(ch.canopy[1]), .8));
+  cg.addColorStop(1, rgba(hexRgb(ch.canopy[1]), 0));
   g.fillStyle = cg; g.fill();
+  // 漏光洞：在冠层上擦出几处透气的亮口
+  g.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < 7; i++) {
+    const hx2 = r() * w, hy2 = h * (.02 + r() * .09), hr = h * (.02 + r() * .05);
+    const hg2 = g.createRadialGradient(hx2, hy2, 0, hx2, hy2, hr);
+    hg2.addColorStop(0, 'rgba(0,0,0,.85)'); hg2.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = hg2; g.beginPath(); g.ellipse(hx2, hy2, hr * 1.5, hr, 0, 0, TAU); g.fill();
+  }
+  g.globalCompositeOperation = 'source-over';
+  // 冠层下缘的散叶：把“布”的下边打碎成一片一片的叶
+  for (let i = 0; i < 120; i++) {
+    const x = r() * w, y = baseLine(x) + rr(-6, 16);
+    const rw = rr(6, 16), rh = rw * rr(.3, .5);
+    g.globalAlpha = .3 + r() * .5;
+    g.fillStyle = r() < .4 ? ch.canopy[1] : ch.canopy[0];
+    g.save(); g.translate(x, y); g.rotate(rr(-.8, .8));
+    g.beginPath(); g.ellipse(0, 0, rw, rh, 0, 0, TAU); g.fill();
+    g.restore();
+  }
+  g.globalAlpha = 1;
+  // 叶幕底缘的雾带：让黑下来的冠与后面的林子有个过渡，别切断画面
+  const fb = g.createLinearGradient(0, h * .04, 0, h * .22);
+  fb.addColorStop(0, ch.fog + '0)'); fb.addColorStop(.6, ch.fog + (ch.fogA * .8) + ')'); fb.addColorStop(1, ch.fog + '0)');
+  g.fillStyle = fb; g.fillRect(0, h * .04, w, h * .2);
   // 叶团：沿基线随机分布，越靠边越暗（自身遮挡），受光侧偏黄绿
   for (let i = 0; i < 150; i++) {
     const x = r() * w;
@@ -806,6 +836,10 @@ function shadow(x, y, rx, ry, a) {
   g.addColorStop(0, `rgba(0,0,0,${.42 * a})`); g.addColorStop(.6, `rgba(0,0,0,${.2 * a})`); g.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = g;
   ctx.beginPath(); ctx.ellipse(x + ox, y, rx * (1 + Math.abs(SHADOW_DX) * .35), ry || rx * .28, 0, 0, TAU); ctx.fill();
+  // 紧核：物体与地面接缝那一小条最深的影，缺了它整个东西就是“飘”着的
+  ctx.globalAlpha = a;
+  ctx.fillStyle = 'rgba(0,0,0,.34)';
+  ctx.beginPath(); ctx.ellipse(x + ox * .25, y, rx * .62, (ry || rx * .28) * .5, 0, 0, TAU); ctx.fill();
   ctx.restore();
 }
 let SHADOW_DX = .4;   // buildScene 里按章光照角更新
@@ -834,8 +868,9 @@ function litBox(bx, by, bw, bh, fn) {
   SH_G.globalCompositeOperation = 'source-atop';
   const ang = ch.sunAngle;
   const lg = SH_G.createLinearGradient(bx, by, bx + bw, by + bh);
-  lg.addColorStop(0, 'rgba(0,0,0,.42)'); lg.addColorStop(.4, 'rgba(90,110,120,.26)');
-  lg.addColorStop(.78, `rgba(255,236,196,${.2 + ang * .5})`); lg.addColorStop(1, 'rgba(255,246,222,.1)');
+  // 亮面在受光的左侧、暗面在右；之前反着打，角色像被身后的光照
+  lg.addColorStop(0, `rgba(255,238,204,${.26 + ang * .5})`); lg.addColorStop(.34, `rgba(255,232,190,${.1 + ang * .28})`);
+  lg.addColorStop(.62, 'rgba(96,116,124,.2)'); lg.addColorStop(1, 'rgba(0,0,0,.5)');
   SH_G.fillStyle = lg; SH_G.fillRect(bx, by, bw, bh);
   const bg = SH_G.createLinearGradient(0, by + bh, 0, by + bh * .6);
   bg.addColorStop(0, 'rgba(120,160,120,.28)'); bg.addColorStop(1, 'rgba(0,0,0,0)');
@@ -875,7 +910,7 @@ function drawDavid(p) {
   }
   // 身体：布衣，左暗右亮（光从右前方）
   const bodyG = ctx.createLinearGradient(-10, -H0, 12, -H0 * .3);
-  bodyG.addColorStop(0, '#5a4632'); bodyG.addColorStop(.5, '#96754f'); bodyG.addColorStop(1, '#c39a6c');
+  bodyG.addColorStop(0, '#c39a6c'); bodyG.addColorStop(.5, '#96754f'); bodyG.addColorStop(1, '#4c3a28');
   ctx.fillStyle = bodyG;
   ctx.beginPath();
   ctx.moveTo(-9, -H0 * .42);
@@ -910,7 +945,7 @@ function drawDavid(p) {
   // 头
   const hy = -H0 * 1.03;
   const headG = ctx.createRadialGradient(3, hy - 3, 2, 0, hy, 12);
-  headG.addColorStop(0, '#f0c9a0'); headG.addColorStop(1, '#a8794f');
+  headG.addColorStop(0, '#f7d7b0'); headG.addColorStop(.55, '#d3a271'); headG.addColorStop(1, '#8f6440');
   ctx.fillStyle = headG; ctx.beginPath(); ctx.ellipse(1, hy, 9.5, 10.5, 0, 0, TAU); ctx.fill();
   // 头发：几笔硬边块面
   ctx.fillStyle = '#241a12';
@@ -966,7 +1001,7 @@ function drawSheep(o) {
   }
   // 毛团：主体
   const wool = ctx.createRadialGradient(-R * .3, -R * .5, R * .1, 0, 0, R * 1.5);
-  wool.addColorStop(0, '#fdfff8'); wool.addColorStop(.55, '#e8efe0'); wool.addColorStop(1, '#9fae9c');
+  wool.addColorStop(0, '#fefffa'); wool.addColorStop(.5, '#eaf1e4'); wool.addColorStop(1, '#8b9c8b');
   ctx.fillStyle = wool;
   ctx.beginPath();
   const lobes = 11;
@@ -1046,10 +1081,18 @@ function drawStrayMarkers(g) {
     g.fill();
     g.restore();
     g.save();
-    g.globalAlpha = .85;
+    g.globalAlpha = .9;
     g.font = '600 11px system-ui, sans-serif'; g.textAlign = isLeft ? 'left' : 'right';
     const d = Math.round(Math.abs(o.x - p.x) / 40);
-    g.fillText(`≈${d}步`, isLeft ? edge + 30 : edge - 30, y + 4);
+    const tx = isLeft ? edge + 30 : edge - 30;
+    // 字底垫一块半透黑：距离标记常落在最亮的雾区/雨丝上，白字会被吃掉
+    const tw = 42;
+    g.fillStyle = 'rgba(6,14,10,.55)';
+    g.beginPath();
+    if (g.roundRect) g.roundRect(isLeft ? tx - 4 : tx - tw + 4, y - 9, tw, 16, 8); else g.rect(tx - 4, y - 9, tw, 16);
+    g.fill();
+    g.fillStyle = hot ? '#ffcf9a' : '#eaf6e6';
+    g.fillText(`≈${d}步`, tx, y + 4);
     g.restore();
   }
 }
@@ -1540,6 +1583,7 @@ cvs.addEventListener('touchstart', (e) => {
     if (stick.id === null && t.clientX < W * .55) {
       stick.id = t.identifier; stick.x0 = t.clientX; stick.y0 = t.clientY;
       stick.x = t.clientX; stick.y = t.clientY; stick.moved = 0; stick.t0 = performance.now();
+      stick.swiped = false;                     // 上一根的残留必须清掉，否则第二次手势直接失效
       stick.base = stickCenter();
       stickHint.style.opacity = '1';
     }
@@ -1555,11 +1599,11 @@ cvs.addEventListener('touchmove', (e) => {
     const totalX = t.clientX - stick.x0, totalY = t.clientY - stick.y0;
     if (Math.abs(totalX) > 10) { input.right = totalX > 0; input.left = totalX < 0; }
     else { input.left = input.right = false; }
-    if (!stick.swiped && performance.now() - stick.t0 < 320) {
-      if (totalY < -46) { stick.swiped = true; input.jumpQ = true; }
-      else if (totalY > 52) { input.duckHeld = true; }
-    }
-    if (totalY < 34) input.duckHeld = false;
+    /* 竖向手势只按距离判定（上下各 56px）。
+       之前额外要求“起指后 320ms 内完成”，实测手指稍微慢一点、或 CDP 派发稍慢，
+       跳跃就整根失效了——距离阈值本身已经足够区分“走”和“跳”。 */
+    if (!stick.swiped && totalY < -56) { stick.swiped = true; input.jumpQ = true; }
+    input.duckHeld = totalY > 56;
     const kx = clamp(stick.base.x + totalX * .5, stick.base.x - 44, stick.base.x + 44);
     const ky = clamp(stick.base.y + totalY * .5, stick.base.y - 44, stick.base.y + 44);
     stickKnob.style.left = kx + 'px'; stickKnob.style.top = ky + 'px';
@@ -1567,10 +1611,17 @@ cvs.addEventListener('touchmove', (e) => {
   }
 }, { passive: false });
 function endStick(e) {
+  let matched = false;
   for (const t of e.changedTouches) {
     if (t.identifier !== stick.id) continue;
+    matched = true;
     /* 点按（没拖动）= 轻击一下也当出拳，方便“一拇指打完就走” */
     if (stick.moved < 14 && performance.now() - stick.t0 < 260) input.punchQ = true;
+    break;
+  }
+  /* 兜底：有些 WebView 的 touchcancel 不带 changedTouches，
+     不兜住的话 stick.id 永远非空，之后所有手势都会被“已在按住”挡掉 */
+  if (matched || e.type === 'touchcancel' || e.touches.length === 0) {
     stick.id = null; input.left = input.right = false; input.duckHeld = false; stick.swiped = false;
     stickHint.style.opacity = '.7';
     stickKnob.style.left = ''; stickKnob.style.top = '';
@@ -1665,7 +1716,7 @@ function update(dt) {
       const leadIdx = G.sheep.findIndex(s => s.state === 'follow');
       const rank = G.sheep.slice(0, i).filter(s => s.state === 'follow').length;
       const leader = rank === 0 ? p : G.sheep[leadIdx + rank - 1];
-      const behind = (rank + 1) * 30;
+      const behind = (rank + 1) * 23;
       const tx = (leader.x || p.x) - Math.sign((leader.x || p.x) - (leader.prevX ?? (leader.x || p.x)) || p.dir) * behind;
       const goal = leader.x - p.dir * behind;
       const dx = goal - o.x;
@@ -2047,6 +2098,7 @@ function drawProp(pr) {
       ctx.closePath(); ctx.fill();
     }
   } else if (pr.k === 'fern') {
+    shadow(x, y + 2, 20 * s, 5 * s, .55);
     ctx.save(); ctx.translate(x, y);
     const sway = Math.sin(G.t * 1.1 + pr.x * .02) * .07;
     for (let i = 0; i < 5; i++) {
@@ -2092,6 +2144,7 @@ function drawPen() {
   const glow = ctx.createRadialGradient(x + 60, y - 40, 10, x + 60, y - 40, 240);
   glow.addColorStop(0, 'rgba(255,224,160,.32)'); glow.addColorStop(1, 'rgba(255,224,160,0)');
   ctx.fillStyle = glow; ctx.fillRect(x - 180, y - 220, 420, 240);
+  shadow(x + 40, y + 4, 92, 14, .8);
   ctx.strokeStyle = '#4a3520'; ctx.lineWidth = 6; ctx.lineCap = 'round';
   for (let i = 0; i < 7; i++) {
     const px = x - 40 + i * 26;
