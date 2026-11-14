@@ -1152,6 +1152,8 @@ const server = http.createServer(async (req, res) => {
     // 小游戏由 Nginx 直接发、不在本应用里；只有这台机器真的装了它才进 sitemap，
     // 否则本地与 QW Pages 会给出一个 404 条目。
     if (fs.existsSync('/var/www/games/submarine/index.html')) entries.push({ loc: `${base}/submarine/`, priority: '0.6' });
+    // 牧羊小勇士（移动端 H5）同样由 Nginx 直发，装了才进 sitemap
+    if (fs.existsSync('/var/www/games/shepherd/index.html')) entries.push({ loc: `${base}/shepherd/`, priority: '0.6' });
     res.writeHead(200, { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'no-cache', ...SECURITY_HEADERS });
     return res.end(seo.sitemapXml(entries));
   }
