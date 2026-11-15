@@ -753,8 +753,19 @@ class Boss {
             return;
         }
         this.phase = this.hp < this.maxHp * .35 ? 2 : this.hp < this.maxHp * .7 ? 1 : 0;
-        // 缓慢巡航
-        this.x += Math.sin(this.t * .5) * 1.1 * dt * 60;
+        // 巡航：从屏幕一侧扫到另一侧、到边折返。
+        // 之前是 this.x += sin(t*.5)*1.1，等于绕着入场点（W-160）原地小幅抖动，
+        // 结果整场 Boss 战都贴在屏幕右边缘——正好压在右侧按钮/信息区下面，
+        // 玩家既看不清也打不顺。折返边距取半个艇身 + 余量，保证整体与血条都在画面内。
+        const m = this.w / 2 + 26;
+        // 速度按可活动带宽自适应：固定 px/帧在手机上会让 Boss 每两秒折返一次，
+        // 看着像来回抽搐而不是巡航。这里改成“横穿一趟用固定秒数”，宽屏快、窄屏慢。
+        const bandW = Math.max(200, W - 2 * m);
+        const secsPerPass = this.phase === 2 ? 4.2 : this.phase === 1 ? 5.6 : 7.2;
+        const spd = Math.min(bandW / secsPerPass / 60, 3.2);   // px/帧，宽屏封顶，免得变成火箭
+        this.x += this.dir * spd * dt * 60;
+        if (this.x < m) { this.x = m; this.dir = 1; }
+        if (this.x > W - m) { this.x = W - m; this.dir = -1; }
         this.y = H * .5 + Math.sin(this.t * .8) * 40;
         // 发射扇形鱼雷
         this.fireCd -= dt;
@@ -777,6 +788,7 @@ class Boss {
         if (this.rageCd <= 0 && this.phase >= 1) {
             this.rageCd = rand(7, 10);
             const tx = clamp(ship.x, 140, W - 140);
+            if (Math.abs(tx - this.x) > 4) this.dir = Math.sign(tx - this.x);   // 冲撞时艇头朝向目标，之后也从那一侧继续巡航
             const dash = { boss: this, targetX: tx, t: 0 };
             dashThrottle.push(dash);
         }
@@ -1438,7 +1450,9 @@ function drawBoss(b) {
     }
     // --- 鱼雷发射管 ---
     ctx.fillStyle = '#6e4c0e';
-    const fw = b.x < ship.x ? w2 * .55 : -w2 * .55 - 20;
+    // 外层已经按 b.dir 镜像过，这里固定在艇首（局部 +x）即可；
+    // 原来写的是 b.x < ship.x ? … : …，Boss 左右巡逻时会把发射管画到船尾去。
+    const fw = w2 * .55;
     ctx.beginPath(); ctx.roundRect ? ctx.roundRect(fw, -16, 20, 8, 2) : ctx.rect(fw, -16, 20, 8); ctx.fill();
     ctx.beginPath(); ctx.roundRect ? ctx.roundRect(fw, 10, 20, 8, 2) : ctx.rect(fw, 10, 20, 8); ctx.fill();
     ctx.fillStyle = '#2a1c04';
