@@ -371,6 +371,7 @@ const CHAPTERS = [
     sky: ['#dff2ff', '#a9e3f6', '#71dba6'], sun: '#fffbe8', sunA: .5, sunAngle: .78,
     fog: 'rgba(255,226,242,', fogA: .38, ground: ['#84bb5b', '#4b7431'], grass: '#a6dd6f',
     canopy: ['#63ab53', '#8ad663', '#36763c'], blossom: ['#ffc7de', '#ff9dc2'],
+    sil: ['#9ecfa4', '#77b985', '#478a5f', '#1f5138'],
     shaft: .46, weather: 'bloom', lightTint: 'rgba(255,242,206,.14)',
     petal: .7, wind: 1.0, bloom: .9, bug: 2, glow: 0
   },
@@ -379,6 +380,7 @@ const CHAPTERS = [
     sky: ['#cdeeff', '#96dbf9', '#5fd6ae'], sun: '#fffdf0', sunA: .62, sunAngle: .95,
     fog: 'rgba(230,248,232,', fogA: .26, ground: ['#8ec45f', '#517d36'], grass: '#b6e77b',
     canopy: ['#5aac4d', '#93da65', '#2d7239'], blossom: ['#ffdcef', '#ffb4d6'],
+    sil: ['#a6d8a6', '#7cc07f', '#498f5c', '#1e5537'],
     shaft: .38, weather: 'bloom', lightTint: 'rgba(255,248,220,.12)',
     petal: .45, wind: 1.25, bloom: 1.35, bug: 4, glow: 0
   },
@@ -387,6 +389,7 @@ const CHAPTERS = [
     sky: ['#d8f5ff', '#a2ecff', '#66dfc0'], sun: '#fffce9', sunA: .55, sunAngle: .7,
     fog: 'rgba(236,250,242,', fogA: .3, ground: ['#84b857', '#487231'], grass: '#aae073',
     canopy: ['#5fae52', '#9ad869', '#2b7138'], blossom: ['#ffcee7', '#ff9cc6'],
+    sil: ['#aadfc2', '#7fc79a', '#468f6c', '#1c5340'],
     shaft: .42, weather: 'bloom', lightTint: 'rgba(255,244,214,.13)',
     petal: 1.15, wind: 2.2, bloom: 1.0, bug: 3, glow: 0
   },
@@ -395,6 +398,7 @@ const CHAPTERS = [
     sky: ['#d7ecff', '#a9dcf6', '#77cdb6'], sun: '#fdf6ff', sunA: .4, sunAngle: .5,
     fog: 'rgba(224,236,255,', fogA: .3, ground: ['#74a352', '#41612f'], grass: '#8fc664',
     canopy: ['#4f9450', '#78bf5c', '#2a6135'], blossom: ['#ffcae4', '#ef9fc4'],
+    sil: ['#9dc3c9', '#74a4b2', '#417a8c', '#1c3f52'],
     shaft: .3, weather: 'bloom', lightTint: 'rgba(236,240,255,.12)',
     petal: .5, wind: .8, bloom: .8, bug: 0, glow: 1
   }
@@ -489,197 +493,81 @@ function paintFar(g, ch, w, h) {
 }
 
 /* 单棵树的剪影：树干锥度 + 枝杈递归 + 团块状树冠（非圆形气泡，用多边形抖动） */
-function treeShape(g, x, baseY, hgt, seedRnd, crownCol, edgeCol, blossomA, blossomB) {
+/* 简约剪影树（本轮改版核心）：一棵树 = 一条闭合轮廓 + 一个平色。
+   之前的低多边形树冠有几十个抖动多边形 + 花簇 + 渐变，在手机上读起来是"一堆碎片"，
+   评审说森林元素过复杂——剪影反而更有层次，也省掉大量 path 调用。
+   type：0 阔叶圆冠 / 1 高塔松 / 2 伞形（桃树感）；由种子决定，保证同一关长得一样。 */
+function treeShape(g, x, baseY, hgt, seedRnd, flatCol) {
   const r = mulberry32(seedRnd);
-  const trunkW = hgt * (.055 + r() * .02);
-  g.save();
-  g.translate(x, baseY);
-  // 树干：左暗右亮的一条锥形体，接地方有根部外扩
+  const type = r() < .34 ? 1 : r() < .7 ? 0 : 2;
+  /* 树干宽度：剪影是平色块，树干太细就会变成“插了根棍的圆片”（评审点名）。
+     阔叶/伞形给到 13% 高、松树 7%，且根部略外扩。 */
+  const tw = hgt * (type === 1 ? .07 : .13);
+  g.fillStyle = flatCol;
   g.beginPath();
-  g.moveTo(-trunkW * 1.5, 0);
-  g.quadraticCurveTo(-trunkW * .9, -hgt * .12, -trunkW * .55, -hgt * .5);
-  g.quadraticCurveTo(-trunkW * .4, -hgt * .8, -trunkW * .22, -hgt);
-  g.lineTo(trunkW * .24, -hgt);
-  g.quadraticCurveTo(trunkW * .44, -hgt * .78, trunkW * .6, -hgt * .48);
-  g.quadraticCurveTo(trunkW * .95, -hgt * .12, trunkW * 1.6, 0);
-  g.closePath();
-  const tg = g.createLinearGradient(-trunkW, 0, trunkW * 1.4, 0);
-  tg.addColorStop(0, edgeCol); tg.addColorStop(.55, crownCol); tg.addColorStop(1, edgeCol);
-  g.fillStyle = tg; g.fill();
-  // 枝杈
-  const br = 2 + Math.floor(r() * 3);
-  for (let i = 0; i < br; i++) {
-    const ty = -hgt * (.55 + r() * .38);
-    const dir = r() < .5 ? -1 : 1;
-    const len = hgt * (.18 + r() * .2);
-    g.beginPath();
-    g.moveTo(0, ty);
-    g.quadraticCurveTo(dir * len * .5, ty - len * .3, dir * len, ty - len * .62);
-    g.lineWidth = Math.max(1, trunkW * .3 * (1 - i / br));
-    g.strokeStyle = edgeCol; g.stroke();
-  }
-  g.restore();
-  // 树冠：8~12 块重叠的不规则团，中心偏上，边缘碎
-  const cx = x, cy = baseY - hgt * 1.02, cr = hgt * .3;
-  const blobs = 7 + Math.floor(r() * 5);
-  for (let i = 0; i < blobs; i++) {
-    const a = (i / blobs) * TAU + r() * .5;
-    const d = cr * (.45 + r() * .6);
-    const bx = cx + Math.cos(a) * d, by = cy + Math.sin(a) * d * .62;
-    const rad = cr * (.5 + r() * .45);
-    g.beginPath();
-    const pts = 9;
-    for (let p = 0; p <= pts; p++) {
-      const pa = (p / pts) * TAU;
-      const pr = rad * (.82 + r() * .34);
-      const px = bx + Math.cos(pa) * pr, py = by + Math.sin(pa) * pr * .78;
-      p === 0 ? g.moveTo(px, py) : g.lineTo(px, py);
+  // 树干（含根部小外扩）
+  g.moveTo(x - tw * 1.5, baseY);
+  g.quadraticCurveTo(x - tw * .7, baseY - hgt * .35, x - tw * .6, baseY - hgt * .52);
+  g.lineTo(x + tw * .6, baseY - hgt * .52);
+  g.quadraticCurveTo(x + tw * .7, baseY - hgt * .35, x + tw * 1.5, baseY);
+  g.closePath(); g.fill();
+  // 冠：三种干净轮廓
+  g.beginPath();
+  const cy = baseY - hgt * (.72 - (type === 1 ? 0 : .04)), cw = hgt * (type === 1 ? .28 : .42);
+  if (type === 1) {                      // 高塔松：三层三角
+    for (let i = 0; i < 3; i++) {
+      /* 三层以同一中轴对称，底层收窄到 .78cw：之前底层过宽看着“笨”（评审点名） */
+      const ty = cy + hgt * .19 * i, hw = cw * (.46 + i * .16), hh = hgt * (.3 - i * .035);
+      g.moveTo(x, ty - hh); g.lineTo(x + hw, ty + hh * .12); g.lineTo(x - hw, ty + hh * .12);
+      g.closePath();
     }
-    g.closePath();
-    const cg = g.createRadialGradient(bx - rad * .3, by - rad * .4, rad * .1, bx, by, rad * 1.2);
-    cg.addColorStop(0, crownCol); cg.addColorStop(1, edgeCol);
-    g.fillStyle = cg; g.fill();
+  } else if (type === 0) {               // 阔叶：一个椭圆 + 两个肩包
+    g.ellipse(x, cy, cw, cw * .78, 0, 0, TAU);
+    g.moveTo(x - cw * .7 + cw * .42, cy - cw * .3); g.ellipse(x - cw * .62, cy - cw * .22, cw * .42, cw * .36, 0, 0, TAU);
+    g.moveTo(x + cw * .7 + cw * .42, cy - cw * .3); g.ellipse(x + cw * .62, cy - cw * .22, cw * .42, cw * .36, 0, 0, TAU);
+  } else {                               // 伞形桃树：扁宽 + 顶部微凹
+    g.ellipse(x, cy + cw * .1, cw * 1.15, cw * .6, 0, 0, TAU);
+    g.ellipse(x, cy - cw * .22, cw * .8, cw * .42, 0, 0, TAU);
   }
-  /* 花簇：叠在树冠外缘的一圈粉白，随机几团——春天最有辨识度的一笔。
-     用比叶团更亮、更小的椭圆叠两层，亮面偏左上，和章内光向一致 */
-  if (blossomA) {
-    const nb = 4 + Math.floor(r() * 5);
-    for (let i = 0; i < nb; i++) {
-      const a = r() * TAU;
-      const d = cr * (.55 + r() * .55);
-      const bxp = cx + Math.cos(a) * d, byp = cy + Math.sin(a) * d * .6 - cr * .1;
-      const br2 = cr * (.26 + r() * .22);
-      const bg = g.createRadialGradient(bxp - br2 * .3, byp - br2 * .35, br2 * .1, bxp, byp, br2);
-      bg.addColorStop(0, blossomA); bg.addColorStop(1, blossomB || blossomA);
-      g.globalAlpha = .8;
-      g.fillStyle = bg;
-      g.beginPath(); g.ellipse(bxp, byp, br2, br2 * .8, r() * TAU, 0, TAU); g.fill();
-    }
-    g.globalAlpha = 1;
-  }
+  g.fill();
 }
-
 function paintMid(g, ch, w, h) {
-  const base = h * .74;
-  // 中景密林：两排，后排更小更淡（空气透视）
-  for (let row = 0; row < 2; row++) {
-    const count = 26 + row * 12;
-    for (let i = 0; i < count; i++) {
-      const x = (i + rr(-.35, .35)) * (w / count);
-      const hgt = h * (row === 0 ? rr(.22, .34) : rr(.14, .24));
-      g.globalAlpha = row === 0 ? .9 : .6;
-      treeShape(g, x, base + row * h * .04, hgt, 1000 + i * 37 + row * 7,
-        row === 0 ? ch.canopy[0] : ch.canopy[1], ch.canopy[2],
-        ch.blossom && (row === 0 || i % 2 === 0) ? ch.blossom[0] : null, ch.blossom && ch.blossom[1]);
+  /* 剪影分三层：远（最淡、贴天）→ 中 → 近（最深）。
+     层与层只用“明度台阶 + 顶部一条雾带”拉开距离，不再画树内细节。 */
+  const rows = [
+    { n: 30, base: h * .68, hR: [.12, .18], col: ch.sil[0], gap: .34 },
+    { n: 26, base: h * .72, hR: [.16, .26], col: ch.sil[1], gap: .30 },
+    { n: 20, base: h * .76, hR: [.22, .34], col: ch.sil[2], gap: .26 }
+  ];
+  rows.forEach((row, ri) => {
+    for (let i = 0; i < row.n; i++) {
+      const x = (i + rr(-row.gap, row.gap)) * (w / row.n);
+      const hgt = h * rr(row.hR[0], row.hR[1]);
+      treeShape(g, x, row.base + ri * 2, hgt, 1000 + i * 37 + ri * 901, row.col);
     }
-  }
-  g.globalAlpha = 1;
-  // 空气透视：中景整体压一层雾
-  const f = g.createLinearGradient(0, base - h * .3, 0, base + h * .05);
-  f.addColorStop(0, ch.fog + (ch.fogA * .5) + ')'); f.addColorStop(1, ch.fog + '0)');
-  g.fillStyle = f; g.fillRect(0, base - h * .34, w, h * .36);
+  });
+  // 层间的一条薄雾：把三层"焊"进空气里，是剪影风唯一需要的过渡
+  const f = g.createLinearGradient(0, h * .6, 0, h * .78);
+  f.addColorStop(0, ch.fog + '0)');
+  f.addColorStop(.55, ch.fog + (ch.fogA * .85) + ')');
+  f.addColorStop(1, ch.fog + '0)');
+  g.fillStyle = f; g.fillRect(0, h * .58, w, h * .22);
 }
-
 function paintCanopyTop(g, ch, w, h) {
-  /* 顶部叶幕：等半径的圆弧会被读成“一排牙齿/云团”（连续两轮评审都点到）。
-     改成不规则轮廓：三条不同频率/相位的正弦叠加做基线，
-     再沿基线挂一串尺寸、角度、明暗都不同的叶团，边缘才有“叶子”的碎。 */
+  /* 顶部只剩一条平滑的深色叶幕带：两个不同波长的正弦叠加，
+     不再挂 150 个叶团和尖头叶片（那是上一轮"太复杂"的主要来源） */
   const r = mulberry32(qsSeed + 991);
-  const f1 = rr(.0016, .0026), f2 = rr(.006, .011), f3 = rr(.02, .034);
-  const p1 = r() * TAU, p2 = r() * TAU, p3 = r() * TAU;
-  const baseLine = (x) => h * .07 + Math.sin(x * f1 + p1) * h * .05 + Math.sin(x * f2 + p2) * h * .032 + Math.sin(x * f3 + p3) * h * .016;
+  const f1 = rr(.0016, .0026), f2 = rr(.005, .009);
+  const p1 = r() * TAU, p2 = r() * TAU;
+  const edge = (x) => h * (.05 + Math.sin(x * f1 + p1) * .028 + Math.sin(x * f2 + p2) * .018);
   g.save();
   g.beginPath();
   g.moveTo(0, 0); g.lineTo(w, 0);
-  for (let x = w; x >= 0; x -= 16) g.lineTo(x, baseLine(x));
+  for (let x = w; x >= 0; x -= 14) g.lineTo(x, edge(x));
   g.closePath();
-  /* 五轮：一整块不透明的深色剪影会被读成“挂了块黑布”。
-     真实树冠是半透明的一层层叶，中间还有漏光的洞，所以：
-     ①本体做“上实下透”的渐变；②用 destination-out 挖几个柔和的漏光洞；
-     ③底缘之外再撒一层半透明叶簇，把硬边打散。 */
-  const cg = g.createLinearGradient(0, 0, 0, h * .24);
-  cg.addColorStop(0, rgba(hexRgb(ch.canopy[2]), .96));
-  cg.addColorStop(.55, rgba(hexRgb(ch.canopy[1]), .8));
-  cg.addColorStop(1, rgba(hexRgb(ch.canopy[1]), 0));
-  g.fillStyle = cg; g.fill();
-  // 漏光洞：在冠层上擦出几处透气的亮口
-  g.globalCompositeOperation = 'destination-out';
-  for (let i = 0; i < 7; i++) {
-    const hx2 = r() * w, hy2 = h * (.02 + r() * .09), hr = h * (.02 + r() * .05);
-    const hg2 = g.createRadialGradient(hx2, hy2, 0, hx2, hy2, hr);
-    hg2.addColorStop(0, 'rgba(0,0,0,.85)'); hg2.addColorStop(1, 'rgba(0,0,0,0)');
-    g.fillStyle = hg2; g.beginPath(); g.ellipse(hx2, hy2, hr * 1.5, hr, 0, 0, TAU); g.fill();
-  }
-  g.globalCompositeOperation = 'source-over';
-  // 冠层下缘的散叶：把“布”的下边打碎成一片一片的叶
-  for (let i = 0; i < 120; i++) {
-    const x = r() * w, y = baseLine(x) + rr(-6, 16);
-    const rw = rr(6, 16), rh = rw * rr(.3, .5);
-    g.globalAlpha = .3 + r() * .5;
-    g.fillStyle = r() < .4 ? ch.canopy[1] : ch.canopy[0];
-    g.save(); g.translate(x, y); g.rotate(rr(-.8, .8));
-    g.beginPath(); g.ellipse(0, 0, rw, rh, 0, 0, TAU); g.fill();
-    g.restore();
-  }
-  g.globalAlpha = 1;
-  // 叶幕底缘的雾带：让黑下来的冠与后面的林子有个过渡，别切断画面
-  const fb = g.createLinearGradient(0, h * .04, 0, h * .22);
-  fb.addColorStop(0, ch.fog + '0)'); fb.addColorStop(.6, ch.fog + (ch.fogA * .8) + ')'); fb.addColorStop(1, ch.fog + '0)');
-  g.fillStyle = fb; g.fillRect(0, h * .04, w, h * .2);
-  // 叶团：沿基线随机分布，越靠边越暗（自身遮挡），受光侧偏黄绿
-  for (let i = 0; i < 150; i++) {
-    const x = r() * w;
-    const y = baseLine(x) + rr(-4, 10);
-    const rw = rr(7, 22), rh = rr(4, 11);
-    g.globalAlpha = .5 + r() * .5;
-    g.fillStyle = r() < .3 ? ch.canopy[0] : ch.canopy[1];
-    g.save(); g.translate(x, y); g.rotate(rr(-.7, .7));
-    g.beginPath(); g.ellipse(0, 0, rw, rh, 0, 0, TAU); g.fill();
-    if (r() < .35) {           // 少量亮叶尖，暗示同一束光打进来
-      g.fillStyle = 'rgba(190,220,150,.22)';
-      g.beginPath(); g.ellipse(rw * .2, -rh * .3, rw * .5, rh * .4, 0, 0, TAU); g.fill();
-    }
-    g.restore();
-  }
-  g.globalAlpha = 1;
-  /* 基线下方再挂一排“尖头叶片”：只有团块会被读成云/牙齿，
-     叶片要有尖端与中脉才像叶（连续三轮评审都点到这条） */
-  for (let x = 0; x < w; x += 9) {
-    const y = baseLine(x);
-    if (r() < .38) continue;
-    const lw = rr(5, 12), lh = lw * rr(.34, .55);
-    const rot = Math.PI * .5 + rr(-.6, .6);
-    g.save(); g.translate(x, y + rr(-2, 6)); g.rotate(rot);
-    const lshade = r();
-    g.fillStyle = lshade < .3 ? ch.canopy[0] : lshade < .7 ? ch.canopy[1] : ch.canopy[2];
-    g.beginPath();
-    g.moveTo(0, 0);
-    g.quadraticCurveTo(lh, lw * .42, 0, lw);       // 一侧弧
-    g.quadraticCurveTo(-lh, lw * .42, 0, 0);        // 另一侧弧，交于尖头
-    g.fill();
-    g.strokeStyle = 'rgba(0,0,0,.18)'; g.lineWidth = .5;
-    g.beginPath(); g.moveTo(0, lw * .1); g.lineTo(0, lw * .9); g.stroke();
-    g.restore();
-  }
-  // 悬垂细枝：从基线掉下来，末端两三片叶
-  for (let i = 0; i < 26; i++) {
-    const vx = r() * w, vy = baseLine(vx) - 2;
-    const len = h * (.05 + r() * .12);
-    g.strokeStyle = ch.canopy[2]; g.lineWidth = 1 + r() * 1.4; g.globalAlpha = .55 + r() * .35;
-    g.beginPath(); g.moveTo(vx, vy);
-    g.quadraticCurveTo(vx + r() * 12 - 6, vy + len * .6, vx + r() * 16 - 8, vy + len);
-    g.stroke();
-    const leaves = 2 + Math.floor(r() * 3);
-    for (let k = 0; k < leaves; k++) {
-      const t = .35 + (k / leaves) * .6;
-      g.beginPath();
-      g.ellipse(vx + (r() * 14 - 7), vy + len * t, 4 + r() * 5, 2 + r() * 2.4, r() * TAU, 0, TAU);
-      g.fillStyle = ch.canopy[Math.floor(r() * 2)]; g.fill();
-    }
-  }
+  g.fillStyle = ch.sil[2]; g.fill();
   g.restore();
 }
-
 /* 地平线起伏：把 value noise 的一行提前取出缓存。
    ⚠️ 早先版本是每采样一次就 getImageData 一次，一次建关要上万次同步回读，
    实测 buildScene 要 33 秒——低端机直接白屏。这里一次读完，之后纯内存查表。 */
@@ -752,11 +640,10 @@ function paintGround(g, ch, w, h) {
     sh.addColorStop(0, 'rgba(190,215,225,.16)'); sh.addColorStop(1, 'rgba(190,215,225,0)');
     g.fillStyle = sh; g.fillRect(0, gy, w, 44);
   }
-  /* 野花：成小片聚集（同一簇色相一致），粉/白/黄三色，
-     数量随章内 bloom 密度走——春天要有“花开成片”而不是随机撒点 */
+  /* 野花：只保留稀疏的小色点当春天的交代（剪影风下细节越少越干净） */
   if (ch.bloom) {
     const palettes = [['#ffd2e4', '#ff9ec6'], ['#ffffff', '#f2e6d0'], ['#ffe89a', '#ffd25e'], ['#cfe4ff', '#9ec6ff']];
-    for (let cl = 0; cl < Math.round(40 * ch.bloom); cl++) {
+    for (let cl = 0; cl < Math.round(18 * ch.bloom); cl++) {
       const cx0 = r() * w, cy0 = groundEdge(r() * w) + 8 + r() * (h - gy) * .5;
       const pal = palettes[Math.floor(r() * 4)];
       const n = 4 + Math.floor(r() * 7);
@@ -766,10 +653,7 @@ function paintGround(g, ch, w, h) {
         g.globalAlpha = .62 + r() * .34;
         g.fillStyle = r() < .8 ? pal[0] : pal[1];
         g.beginPath(); g.ellipse(fx, fy, fr, fr * .72, r() * TAU, 0, TAU); g.fill();
-        if (r() < .3) {                       // 一点花蕊，放大看才不至于像色斑
-          g.fillStyle = 'rgba(200,150,60,.55)';
-          g.beginPath(); g.arc(fx, fy, fr * .3, 0, TAU); g.fill();
-        }
+        // 剪影风下花蕊放大才可见，属于噪声，去掉
       }
     }
     g.globalAlpha = 1;
@@ -779,13 +663,13 @@ function paintGround(g, ch, w, h) {
   g.fillRect(0, gy - 8, w, h - gy + 8); g.globalAlpha = 1;
   g.restore();
   // 草：成簇细叶，靠近地平线的更亮（受光），下方转暗
-  for (let i = 0; i < 1500; i++) {
+  for (let i = 0; i < 700; i++) {
     const x = r() * w, base = groundEdge(x) + r() * 4;
     const depth = r();
     const hh = 6 + depth * 20;
-    const light = 22 + (1 - depth) * 26;
-    g.strokeStyle = `hsl(${78 + r() * 30}, ${26 + r() * 22}%, ${light * .6}%)`;
-    g.lineWidth = .7 + r() * 1;
+    /* 剪影风的地面只留两档明度：近处深、地平线处稍亮，不要再抖色相 */
+    g.strokeStyle = depth > .5 ? 'rgba(46,78,40,.85)' : 'rgba(76,116,58,.8)';
+    g.lineWidth = .8 + r() * 1.1;
     g.beginPath();
     g.moveTo(x, base);
     g.quadraticCurveTo(x + (r() * 6 - 3), base - hh * .6, x + (r() * 12 - 6), base - hh);
@@ -822,112 +706,44 @@ function paintGround(g, ch, w, h) {
 }
 
 function paintTrunks(g, ch, w, h) {
-  /* 前景树 = 镜头焦外的一层，不是墙。
-     前几版翻车的真正原因在这里：这层的世界宽度和别的层一样是 4200，
-     而我按“屏宽百分比”给干径（4200×2% ≈ 84 逻辑像素 ≈ 屏幕上 84 像素），
-     于是画面上是四根巨柱，必然被读成“光柱/电线杆”。
-     现在按屏幕尺度给尺寸：干径 14–26px，平均每 640px 一根，疏密随机。
-     焦外感由 0.5 倍分辨率离屏层承担，不用 canvas filter：
-     filter 在软件渲染（部分微信 WebView 与 headless）上代价极大，首轮实测建关要 33 秒。 */
+  /* 前景（焦外）剪影层：只剩几根最暗的干 + 两根同色枝杈，无树皮/苔藓/clip。
+     干径按屏幕尺度 20–36px（这层现在是全分辨率），位置按 640px 间距随机，不做栅栏。 */
   const r = mulberry32(qsSeed + 313);
   const step = 640;
+  g.fillStyle = ch.sil[3] || '#0d1a12';
   for (let x0 = 140; x0 < w; x0 += step) {
-    if (r() < .32) continue;                       // 不做栅栏
-    const x = x0 + rr(-110, 110);
-    const wdt = rr(14, 26);                         // 这层是 0.5 倍离屏，逻辑像素即屏幕像素
-    g.save();
-    g.globalAlpha = .7;
+    if (r() < .34) continue;
+    const x = x0 + rr(-120, 120);
+    const wdt = rr(10, 18);
     g.beginPath();
-    g.moveTo(x - wdt * 1.25, h + 10);
-    g.quadraticCurveTo(x - wdt * .8, h * .42, x - wdt * .5, -h * .05);
-    g.lineTo(x + wdt * .5, -h * .05);
-    g.quadraticCurveTo(x + wdt * .78, h * .42, x + wdt * 1.25, h + 10);
-    g.closePath();
-    const tg = g.createLinearGradient(x - wdt, 0, x + wdt, 0);
-    tg.addColorStop(0, '#050906'); tg.addColorStop(.34, ch.canopy[2]);
-    tg.addColorStop(.66, ch.canopy[0]); tg.addColorStop(1, '#050906');
-    const vg = g.createLinearGradient(0, 0, 0, h);
-    vg.addColorStop(0, 'rgba(0,0,0,.5)'); vg.addColorStop(.22, 'rgba(0,0,0,0)');
-    vg.addColorStop(.88, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.55)');
-    g.fillStyle = tg; g.fill();
-    g.fillStyle = vg; g.fill();
-    // 树皮：先 clip 到树干轮廓，竖纹与苔疤才不会溢出成“光柱边的脏点”
-    g.save(); g.clip();
-    g.globalAlpha *= .55; g.strokeStyle = 'rgba(8,16,10,.9)';
-    for (let k = 0; k < 11; k++) {
-      g.lineWidth = .8 + r() * 1.1;
-      const bx = x - wdt + r() * wdt * 2;
-      g.beginPath();
-      g.moveTo(bx, -h * .05); g.quadraticCurveTo(bx + r() * 5 - 2.5, h * .5, bx + r() * 4 - 2, h + 10);
-      g.stroke();
-    }
-    for (let k = 0; k < 2; k++) {
-      const by = rr(h * .2, h * .82), br = wdt * rr(.55, 1.05);
-      const bg2 = g.createRadialGradient(x, by, br * .15, x, by, br);
-      bg2.addColorStop(0, 'rgba(66,90,54,.9)'); bg2.addColorStop(1, 'rgba(18,30,16,0)');
-      g.fillStyle = bg2; g.beginPath(); g.ellipse(x, by, br * .8, br, 0, 0, TAU); g.fill();
-    }
-    g.restore();
-    // 枝杈朝画面内侧伸出，端头挂一团叶——“这是树”的关键一笔
+    g.moveTo(x - wdt * 1.35, h + 10);
+    g.quadraticCurveTo(x - wdt * .72, h * .44, x - wdt * .46, -h * .05);
+    g.lineTo(x + wdt * .46, -h * .05);
+    g.quadraticCurveTo(x + wdt * .74, h * .44, x + wdt * 1.35, h + 10);
+    g.closePath(); g.fill();
+    // 两根简洁枝杈（同色，纯轮廓）
     const inDir = (x % LAYER_W) < w / 2 ? 1 : -1;
-    const nb = 1 + (r() < .55 ? 1 : 0);
-    g.lineCap = 'round';
+    const nb = 1 + (r() < .5 ? 1 : 0);
     for (let b = 0; b < nb; b++) {
-      const by = h * rr(.1, .3) + b * h * .14, bl = wdt * rr(3.4, 5.6);
-      g.globalAlpha = .74;
-      g.strokeStyle = ch.canopy[2]; g.lineWidth = Math.max(2.4, wdt * .32);
+      const by = h * rr(.1, .3) + b * h * .13, bl = wdt * rr(3.4, 5.2);
+      g.lineWidth = Math.max(2.4, wdt * .3); g.lineCap = 'round'; g.strokeStyle = g.fillStyle;
       g.beginPath();
       g.moveTo(x, by);
-      g.quadraticCurveTo(x + inDir * bl * .55, by - bl * .1, x + inDir * bl, by - bl * .44);
+      g.quadraticCurveTo(x + inDir * bl * .55, by - bl * .12, x + inDir * bl, by - bl * .46);
       g.stroke();
-      g.fillStyle = ch.canopy[1];
-      for (let k = 0; k < 4; k++) {
-        g.beginPath();
-        g.ellipse(x + inDir * bl + rr(-wdt, wdt) * 1.5, by - bl * .44 + rr(-wdt, wdt),
-          wdt * 1.2, wdt * .72, rr(-.6, .6), 0, TAU);
-        g.fill();
-      }
     }
-    // 根部外扩 + 苔藓：树是长在地上，不是贴在画面上
-    g.globalAlpha = .7; g.fillStyle = ch.canopy[2];
-    g.beginPath();
-    g.moveTo(x - wdt * 1.25, h + 10);
-    g.quadraticCurveTo(x - wdt * 2.3, h - 6, x - wdt * 3.1, h + 10);
-    g.closePath(); g.fill();
-    g.beginPath();
-    g.moveTo(x + wdt * 1.25, h + 10);
-    g.quadraticCurveTo(x + wdt * 2.3, h - 8, x + wdt * 3.2, h + 10);
-    g.closePath(); g.fill();
-    g.fillStyle = 'rgba(96,132,78,.4)';
-    g.beginPath(); g.ellipse(x, h + 3, wdt * 2.4, wdt * .6, 0, 0, TAU); g.fill();
-    g.restore();
+    // 根部一块扁平剪影，接地即可，不再画苔藓
+    g.beginPath(); g.ellipse(x, h + 2, wdt * 2.3, wdt * .5, 0, 0, TAU); g.fill();
   }
-  // 前景悬垂叶幕（两侧上角，焦外）
-  g.save();
-  g.globalAlpha = .42;
-  for (let side = 0; side < 2; side++) {
-    const ox = side ? w : 0, d = side ? -1 : 1;
-    for (let i = 0; i < 4; i++) {
-      const lx = ox + d * (8 + i * 20), ly = -6 + i * 6;
-      g.strokeStyle = ch.canopy[2]; g.lineWidth = 3.4 + i * .9;
-      g.beginPath(); g.moveTo(lx, ly); g.quadraticCurveTo(lx + d * 34, ly + 50 + i * 10, lx + d * 20, ly + 120 + i * 16); g.stroke();
-      for (let k = 0; k < 6; k++) {
-        const t = .2 + k * .13;
-        const px = lerp(lx, lx + d * 26, t), py = ly + (120 + i * 16) * t;
-        g.fillStyle = k % 2 ? ch.canopy[1] : ch.canopy[0];
-        g.beginPath(); g.ellipse(px + d * 11, py, 14 - i * .8, 6.4, d * .6, 0, TAU); g.fill();
-      }
-    }
-  }
-  g.restore();
-}
-function buildScene(ch) {
+}function buildScene(ch) {
   // 光照越低影子越长；光源在画面左上，所以影子统一偏右下
   SHADOW_DX = .35 + (1 - ch.sunAngle) * 1.5;
   layers.far = newLayer(LAYER_W, H, .6);
-  layers.mid = newLayer(LAYER_W, H, .7);
+  layers.mid = newLayer(LAYER_W, H, .85);
   layers.ground = newLayer(LAYER_W, H, 1);
-  layers.near = newLayer(LAYER_W, H, .5);   // 前景焦外：半分辨率足够
+  /* 剪影风的关键就是干净的边缘：0.5 倍离屏放大回来会把轮廓发糊，
+     所以前景层不再降采样（省下的开销由“每棵树只剩一条 path”补回来） */
+  layers.near = newLayer(LAYER_W, H, 1);
   paintSky(layers.far.g, ch, LAYER_W, H);
   paintFar(layers.far.g, ch, LAYER_W, H);
   paintMid(layers.mid.g, ch, LAYER_W, H);
@@ -952,17 +768,25 @@ function resize() {
    毛/羽质感用短笔触叠色，动画靠骨架参数（呼吸、迈步、甩尾）而不是贴图。
    ===================================================================== */
 function shadow(x, y, rx, ry, a) {
-  // 阴影朝背向太阳的一侧拉长：太阳越低（清晨/黄昏）影子越长，这是“贴在地上”最有说服力的一笔
-  ctx.save();
+  /* 阴影朝背向太阳的一侧拉长：太阳越低（清晨/黄昏）影子越长——
+     这是“贴在地上”最有说服力的一笔。剪影风下背景很干净，
+     实体若没有扎实接地影就会像贴纸（评审两轮点名），所以这里分三段画。 */
+  const ry0 = ry || rx * .28;
   const ox = SHADOW_DX * rx * .8;
+  /* 夜里对比低，紧核要更硬才读得出（但收着点：夜影过重会变成一块死黑） */
+  const nightK = daylight().light < .6 ? 1.2 : 1;
+  ctx.save();
+  // ① 拉长方向的浅影：给出光向
   const g = ctx.createRadialGradient(x + ox, y, 0, x + ox, y, rx * (1 + Math.abs(SHADOW_DX) * .35));
-  g.addColorStop(0, `rgba(0,0,0,${.42 * a})`); g.addColorStop(.6, `rgba(0,0,0,${.2 * a})`); g.addColorStop(1, 'rgba(0,0,0,0)');
+  g.addColorStop(0, `rgba(0,0,0,${.3 * a})`); g.addColorStop(.62, `rgba(0,0,0,${.13 * a})`); g.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = g;
-  ctx.beginPath(); ctx.ellipse(x + ox, y, rx * (1 + Math.abs(SHADOW_DX) * .35), ry || rx * .28, 0, 0, TAU); ctx.fill();
-  // 紧核：物体与地面接缝那一小条最深的影，缺了它整个东西就是“飘”着的
-  ctx.globalAlpha = a;
-  ctx.fillStyle = 'rgba(0,0,0,.34)';
-  ctx.beginPath(); ctx.ellipse(x + ox * .25, y, rx * .62, (ry || rx * .28) * .5, 0, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x + ox, y, rx * (1 + Math.abs(SHADOW_DX) * .35), ry0, 0, 0, TAU); ctx.fill();
+  // ② 本体正下方一团：把物体“按”进地面
+  ctx.fillStyle = `rgba(0,0,0,${.26 * a * nightK})`;
+  ctx.beginPath(); ctx.ellipse(x + ox * .3, y, rx * .8, ry0 * .78, 0, 0, TAU); ctx.fill();
+  // ③ 紧贴底边的窄核：最深的接缝
+  ctx.fillStyle = `rgba(0,0,0,${.4 * a * nightK})`;
+  ctx.beginPath(); ctx.ellipse(x + ox * .12, y - ry0 * .12, rx * .58, ry0 * .34, 0, 0, TAU); ctx.fill();
   ctx.restore();
 }
 let SHADOW_DX = .4;   // buildScene 里按章光照角更新
@@ -1694,7 +1518,34 @@ const A = (() => {
     punch: () => { noise(.09, 900, 1.2, .22, 'lowpass'); tone(160, 90, .09, 'square', .07); },
     hit: () => { cam.shake = 5; noise(.16, 260, .8, .3, 'lowpass'); },
     dodge: () => noise(.2, 2600, 3, .12),
-    bleat: () => { tone(560, 380, .3, 'sawtooth', .07, 26); },
+    /* 绵羊叫：一段“ba—”由两个共振峰带出来
+       （基频锯齿 + 快速颤音 + 收尾下滑，再叠一个 900Hz 带通当鼻音）。
+       far=true 时音量与亮度都收，用来做远处落单羊的背景呼唤。 */
+    bleat: (far, panic) => {
+      if (!ready) return;
+      const t0 = ac.currentTime;
+      const f0 = far ? 300 + Math.random() * 70 : (panic ? 700 : 520) + Math.random() * 60;
+      const dur = far ? .42 : (panic ? .26 : .36);
+      const o = ac.createOscillator(); o.type = 'sawtooth';
+      const vib = ac.createOscillator(); vib.frequency.value = 17 + Math.random() * 7;
+      const vg = ac.createGain(); vg.gain.value = f0 * .12;
+      vib.connect(vg); vg.connect(o.frequency);
+      o.frequency.setValueAtTime(f0, t0);
+      o.frequency.linearRampToValueAtTime(f0 * 1.12, t0 + dur * .35);
+      o.frequency.exponentialRampToValueAtTime(f0 * .62, t0 + dur);
+      const bp = ac.createBiquadFilter(); bp.type = 'bandpass';
+      bp.frequency.value = far ? 700 : 1050; bp.Q.value = 1.5;
+      const lp = ac.createBiquadFilter(); lp.type = 'lowpass';
+      lp.frequency.value = far ? 1100 : 2600;                    // 远处连高频都被空气吃掉
+      const g = ac.createGain();
+      const vol = far ? .035 : .085;
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(vol, t0 + .04);
+      g.gain.exponentialRampToValueAtTime(.0008, t0 + dur);
+      o.connect(bp); bp.connect(lp); lp.connect(g); g.connect(master);
+      o.start(t0); o.stop(t0 + dur + .05);
+      vib.start(t0); vib.stop(t0 + dur + .05);
+    },
     join: () => { tone(700, 1050, .18, 'sine', .1); setTimeout(() => tone(1050, 1300, .14, 'sine', .07), 90); },
     whistle: () => { noise(.5, 2400, 6, .18); tone(1900, 2600, .45, 'sine', .06); G.whistleEcho = .5; },
     roar: () => { tone(150, 60, .9, 'sawtooth', .16); noise(.8, 300, .7, .16, 'lowpass'); cam.shake = 8; },
@@ -1808,6 +1659,22 @@ window.addEventListener('blur', () => { if (G.state === 'playing') pause(); });
    七、更新
    ===================================================================== */
 const PHYS = { g: 2100, jump: 660, speed: 190, acc: 1400, fric: 900 };
+/* ---------- 羊群发声调度 ----------
+   沉默的羊群会让“牧羊”变成哑剧：落单羊隔一阵叫一声引你过去，被叼走惊叫、
+   归队与吹哨有应答。音量都很轻，且只在画面附近发声（远处叫等于凭空冒声音）。 */
+let bleatTimer = 0;
+function scheduleBleats(dt) {
+  bleatTimer -= dt;
+  if (bleatTimer > 0) return;
+  bleatTimer = 3.2 + Math.random() * 5.5;
+  const out = G.sheep.filter(o => o.state === 'stray' || o.state === 'panic');
+  if (!out.length) return;
+  const near = out.filter(o => Math.abs(o.x - p.x) < W * 1.4);
+  if (!near.length) return;
+  const o = near[Math.floor(Math.random() * near.length)];
+  A.bleat(Math.abs(o.x - p.x) > W * .6, o.state === 'panic');
+}
+
 function update(dt) {
   G.t += dt; G.elapsed += dt;
   const playerY = (o) => GROUND - (o.y || 0);
@@ -1995,7 +1862,7 @@ function update(dt) {
       } else if (f.dash > 0) {
         f.dash -= dt; f.x += f.pDir * 330 * dt; f.moving = true;
         const tail = G.sheep.filter(o => o.state === 'follow').sort((a, b) => (Math.abs(a.x - f.x) - Math.abs(b.x - f.x)))[0];
-        if (tail && Math.abs(tail.x - f.x) < 26) { tail.state = 'carried'; tail.carry = f; f.carry = tail; A.yip(); popText('队尾被叼!', '#ffb08a'); }
+        if (tail && Math.abs(tail.x - f.x) < 26) { tail.state = 'carried'; tail.carry = f; f.carry = tail; A.yip(); A.bleat(false, true); popText('队尾被叼!', '#ffb08a'); }
         if (f.dash <= 0) { f.state = 'prowl'; }
       } else {
         const tail = G.sheep.filter(o => o.state === 'follow').sort((a, b) => (Math.abs(a.x - f.x) - Math.abs(b.x - f.x)))[0];
@@ -2014,7 +1881,7 @@ function update(dt) {
 
   /* --- 天气与粒子 --- */
   updateWeather(dt);
-  updateWind(dt); updatePetals(dt); updateBugs(dt); updateFire(dt);
+  updateWind(dt); updatePetals(dt); updateBugs(dt); updateFire(dt); scheduleBleats(dt);
   for (let i = G.parts.length - 1; i >= 0; i--) {
     const q = G.parts[i];
     q.life -= dt; q.x += q.vx * dt; q.y += q.vy * dt; q.vy += (q.g || 0) * dt;
@@ -2094,13 +1961,13 @@ function doWhistle() {
     if (o.state === 'stray' && Math.abs(o.x - p.x) < 340) { o.summon = true; o.summonT = 3; n++; }
     if (o.state === 'panic') o.panic = Math.min(o.panic, .1);
   }
-  if (n) popText(`召来 ${n} 只`, '#dff2e0');
+  if (n) { popText(`召来 ${n} 只`, '#dff2e0'); A.bleat(); }   // 羊听见哨声会回一声
   // 风险：吵醒狗熊
   for (const f of G.foes) if (f.k === 'bear' && f.state === 'sleep' && Math.abs(f.x - p.x) < 520) { f.state = 'wake'; f.wakeT = .6; A.growl(); }
   for (const f of G.foes) if (f.k === 'hyena' && Math.abs(f.x - p.x) < 260 && !f.carry) { f.dash = 0; f.stun = .5; f.x += Math.sign(f.x - p.x) * 60; }
 }
 function adopt(o) {
-  o.state = 'follow'; o.summon = false; G.rescued++; G.score += 60; A.join(); A.bleat();
+  o.state = 'follow'; o.summon = false; G.rescued++; G.score += 60; A.join(); A.bleat(false, false);
   popText('+1 🐑', '#eaf7e0');
   for (let i = 0; i < 10; i++) puff(o.x, GROUND - 24, '#f0f7ea');
 }
@@ -2696,7 +2563,7 @@ function drawProp(pr) {
     ctx.restore();
   } else if (pr.k === 'crate') {
     // 武器补给箱：未开时轻微浮动 + 一道反光，开过只剩空箱
-    shadow(x, y + 2, 18 * s, 5 * s, pr.opened ? .5 : .9);
+    shadow(x, y + 3, 22 * s, 6 * s, pr.opened ? .75 : 1.05);
     const bob = pr.opened ? 0 : Math.sin(G.t * 2 + pr.x) * 2;
     const open = pr.opened;
     const g = ctx.createLinearGradient(x - 15 * s, 0, x + 15 * s, 0);
@@ -2728,7 +2595,7 @@ function drawProp(pr) {
     ctx.strokeStyle = 'rgba(40,28,16,.6)'; ctx.lineWidth = 1;
     for (let i = 1; i < 4; i++) { ctx.beginPath(); ctx.ellipse(x, y - 22 * s, 13 * s * i / 4, 4.5 * s * i / 4, 0, 0, TAU); ctx.stroke(); }
   } else if (pr.k === 'log') {
-    shadow(x, y + 3, 34, 7, .9);
+    shadow(x, y + 3, 40, 9, 1.15);
     const g = ctx.createLinearGradient(0, y - 26, 0, y + 2);
     g.addColorStop(0, '#5d4630'); g.addColorStop(.55, '#3d2c1d'); g.addColorStop(1, '#221810');
     ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(x - 34, y - 24, 68, 24, 11); ctx.fill();
