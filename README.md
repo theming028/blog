@@ -37,79 +37,17 @@ PORT=3000 HOST=127.0.0.1 node server.js
 
 ## 小游戏
 
-两个单文件 HTML5 小游戏，源码副本放在 `games/<name>/index.html`，便于版本管理与评审。
-**线上不由 Node 应用托管**：它们经 Nginx 直接发送（`alias /var/www/games/<name>/`），
-因为应用的 CSP 会拦内联 `<script>`，且这类纯静态资源不该占用应用进程。
+只有一个在线小游戏：**潜艇大战**，纯静态单文件，**不在本仓库里、也不经 Node 应用**
+（应用的 CSP 会拦内联 `<script>`，而且这类静态小游戏不该占应用进程）。
 
-| 路径 | 线上地址 | 说明 |
-| --- | --- | --- |
-| `games/submarine/index.html` | `/submarine/` | 潜艇大战：Canvas + WebAudio 程序化美术/音效，桌面键位 + 移动端拖动与按钮 |
-| `games/shepherd/index.html` | `/shepherd/` | 牧羊小勇士 · 丛林回响：移动端为主的横版牧羊动作关 |
+| 项 | 值 |
+| --- | --- |
+| 线上地址 | `/submarine/` |
+| 服务器目录 | `/var/www/games/submarine/index.html` |
+| Nginx 规则 | `location /submarine/ { alias …; index index.html; add_header Cache-Control "no-cache"; }`（见 `deploy/shaoym.me.*.conf`） |
+| 更新方式 | 直接 `scp` 覆盖那个 index.html，不用重启博客 |
 
-**牧羊小勇士的云端表**（QW Pages 部署、即 SupabaseStore 驱动时才需要；shaoym.me 走 LocalStore 免建表）：
-
-```sql
-CREATE TABLE IF NOT EXISTS game_scores (
-  id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  game text NOT NULL DEFAULT 'shepherd',
-  day text NOT NULL,                    -- 中国时区的 YYYY-MM-DD，日榜按这个切
-  hash text NOT NULL,                   -- 客户端匿名访客标识（非 IP），只用于算“我的名次”
-  name text NOT NULL DEFAULT '',        -- 榜上显示的匿名昵称（≤12 字）
-  score integer NOT NULL DEFAULT 0,
-  sheep integer NOT NULL DEFAULT 0,
-  combo integer NOT NULL DEFAULT 0,
-  secs integer NOT NULL DEFAULT 0,
-  seed bigint,
-  win boolean NOT NULL DEFAULT false,
-  created_at timestamptz NOT NULL DEFAULT now());
-CREATE INDEX IF NOT EXISTS gs_day_idx ON game_scores (game, day, score DESC);
-CREATE TABLE IF NOT EXISTS game_assists (
-  token text PRIMARY KEY,               -- 助力复活的一次性令牌
-  game text NOT NULL DEFAULT 'shepherd',
-  day text NOT NULL,
-  owner text NOT NULL,                  -- 发起人 hash：只有本人能查“是否被帮过”
-  name text NOT NULL DEFAULT '',
-  used_by text,
-  used_at timestamptz,
-  created_at timestamptz NOT NULL DEFAULT now());
-```
-
-没建表也不会炸：`lib/game.js` 探测到缺表时所有接口返回 `{enabled:false}`，
-游戏端拿到后自动隐藏榜与助力入口，本地 best 照常记录。
-
-`games/` 不进部署包（打包时 `--exclude=games`），更新方式是单独 `scp` 覆盖站点目录，
-详见 `deploy/上线手册.md` 的「小游戏」一节。
-
-**牧羊小勇士的设计口径**（改代码前值得一读）：
-
-- 原作是 668K Flash 横版动作（长老委托 → 进丛林 → 打狮子狗熊 → 找回羊群），羊只是通关标志；
-  本版把「牧羊」变成过程机制：救回的羊排队跟随，**羊群既是血量也是推力**——队尾被叼走就掉勇气，
-  羊群成势才能把叼走羊的野兽顶开。
-- 单拇指操作：左半屏拖动移动、上滑跳、下滑蹲（蹲是躲狮子扑击的唯一手段），右下两个按钮为出拳、吹哨；
-  点按与拖动以 8px 阈值分离，避免想调整站位就误投弹。
-- 吹哨：召回散羊，但会吵醒附近沉睡的狗熊——招募与风险同一个键。
-- 敌人性格：狮子锁定落单羊/队尾、0.6s 蓄势后扑击；狗熊皮厚、沉睡挡路、被哨声或近身吵醒；
-  鬣狗专叼队尾并往洞口跑。第 4 章有狮王。
-- 美术为**简约剪影 + 鲜艳春日**的混合口径（第五轮改版）：背景（远山 / 三层树林 / 顶部叶幕 / 前景树干）
-  一律**一条闭合轮廓 + 一个平色**，靠 `sil[远→中→近→前景]` 四档明度台阶和一条层间薄雾拉开纵深；
-  前景实体（人、羊、野兽、原木、补给箱、栅栏）保留体积画法，形成“背景压平、角色压实”的二分法。
-  剪影的代价是**接地影必须扎实**，否则实体像贴纸：`shadow()` 画三段（光向长影 → 正下方一团 → 贴边窄核），
-  夜里对比低时整体加硬（但只到 1.2 倍，再重就是一块死黑）。
-  性能红利很实在：一次建关从 400–690ms 降到 **35ms**（path 数量骤降），前景层也因此能回到全分辨率拿干净边缘。
-- 昼夜由**真实中国时区时钟**驱动（`daylight()` 关键帧插值亮度/暖度/星月/天幕洗色）：白天通亮、
-  16:20 起就开始烧成暖橘并把太阳落到山脊线上（贴地时更大更红 + 余晖带）、夜里整片天幕换成青蓝并升起
-  带月海暗斑的月亮与星点、近地萤火。章节名只表地点（桃林小径 / 花田深处 / 柳岸风岗 / 萤火归途），
-  时辰写在 HUD 阶段里，避免「春晨桃林 · 暮」这种自相矛盾。
-- 移动端为主：`touch-action: none` 拦下拉刷新、按钮位置全部带 `env(safe-area-inset-*)`、
-  WebAudio 在首次触摸里解锁、切后台自动暂停、实测帧率自动降画质（花瓣/雨丝/光带/离屏光照逐级关）。
-- 声音全部由 WebAudio 程序合成（零音频文件）。绵羊叫是玩法反馈的一部分（不是装饰）：
-  `A.bleat(far, panic)` 合成“ba—”（基频锯齿 + 17~24Hz 颤音 +
-  收尾下滑 + 鼻音带通），远处落单羊会降低亮度与音量；触发点为归队应答、吹哨应答、被叼走惊叫，
-  以及 `scheduleBleats()` 每 3~9 秒从画面附近的落单羊里挑一只叫——沉默的羊群会让“牧羊”变成哑剧。
-- 分享：结算页生成战绩卡（Canvas 导出为 `og.jpg` 作微信抓取的 `og:image`）；
-  链接带 `?seed=<n>&from=<别名>`，好友打开跑的是同一片丛林；纯 H5，不依赖 JS-SDK 签名。
-- 日榜与助力：`/api/game/board|score|assist`（见 `lib/game.js`）；助力链接带 `?revive=<token>`，
-  好友点开自动核销，本人轮询到后可原地复活一次。后端不可用时全部静默降级，不影响玩法。
+`/sitemap.xml` 只有在机器上真的装了它时才把 `/submarine/` 写进去（`server.js` 里一次 `fs.existsSync` 判断）。
 
 ## 致谢
 
