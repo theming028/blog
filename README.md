@@ -37,15 +37,19 @@ PORT=3000 HOST=127.0.0.1 node server.js
 
 ## 小游戏
 
-只有一个在线小游戏：**潜艇大战**，纯静态单文件，**不在本仓库里、也不经 Node 应用**
+只有一个在线小游戏：**潜艇大战**，纯静态单文件，**不经 Node 应用**
 （应用的 CSP 会拦内联 `<script>`，而且这类静态小游戏不该占应用进程）。
+源码纳入仓库跟踪：`games/submarine/index.html`——改完记得同时提交仓库与覆盖站点目录，别再出现「只有服务器上有一份」的情况。
 
 | 项 | 值 |
 | --- | --- |
 | 线上地址 | `/submarine/` |
+| 仓库源码 | `games/submarine/index.html` |
 | 服务器目录 | `/var/www/games/submarine/index.html` |
 | Nginx 规则 | `location /submarine/ { alias …; index index.html; add_header Cache-Control "no-cache"; }`（见 `deploy/shaoym.me.*.conf`） |
-| 更新方式 | 直接 `scp` 覆盖那个 index.html，不用重启博客 |
+| 更新方式 | 先备份线上那份，再 `scp` 覆盖 index.html，不用重启博客；`scp` 后核对 md5 与仓库一致 |
+
+`games/` 不进博客部署包（打包时 `--exclude=games`），所以更新小游戏是**独立动作**，不随博客发布走。
 
 `/sitemap.xml` 只有在机器上真的装了它时才把 `/submarine/` 写进去（`server.js` 里一次 `fs.existsSync` 判断）。
 
