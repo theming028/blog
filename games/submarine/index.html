@@ -80,6 +80,20 @@ html,body { width:100%; height:100%; background:#000; overflow:hidden; font-fami
 .btn-restart { background:linear-gradient(180deg,#ffb347,#e07b1a); box-shadow:0 6px 26px rgba(255,150,40,.4), inset 0 1px 0 rgba(255,255,255,.4); color:#2a1200; }
 .controls-grid { margin-top:22px; display:grid; grid-template-columns:1fr 1fr; gap:8px 26px; text-align:left; }
 .control-row { display:flex; align-items:center; gap:10px; }
+/* 键位提示只在键鼠设备显示，触屏显示同一排的手势提示——原先菜单只写 ← → / SPACE，
+   手机玩家看完只知道有键位、不知道能拖动，等于把核心操作藏起来了 */
+.ctl-key { display:flex; }
+.ctl-touch { display:none; }
+@media (hover: none), (pointer: coarse) {
+    .ctl-key { display:none; }
+    .ctl-touch { display:flex; }
+    /* 触屏上窄屏两列会把“战舰跟手指走”这种关键提示折成两行，读起来费劲——
+       改成单列且不换行，手势提示必须一眼看完 */
+    .controls-grid { grid-template-columns:1fr; gap:10px 0; }
+    .control-row { justify-content:center; }
+    .key-badge { white-space:nowrap; }
+    .control-label { white-space:nowrap; }
+}
 .key-badge { display:inline-block; min-width:58px; text-align:center; padding:4px 8px; border-radius:8px; font-size:12px; font-weight:bold;
   color:#9fe8ff; background:rgba(0,120,180,.25); border:1px solid rgba(0,220,255,.4); box-shadow:inset 0 -2px 0 rgba(0,180,255,.3); }
 .control-label { color:#9db8c8; font-size:13px; }
@@ -208,11 +222,12 @@ html,body { width:100%; height:100%; background:#000; overflow:hidden; font-fami
                 <div class="modal-tip">💡 按 ESC 键关闭此窗口</div>
                 <div class="modal-body">
                     <div class="help-section"><h3>🎯 基本操作</h3><ul>
+                        <li>手机端：<strong>按住屏幕并左右拖动，战舰会跟着手指走</strong>；轻一下屏幕 = 投弹（拖动过程中不会误投）</li>
+                        <li>💣 按钮 = 投弹，W 按钮 = 切换武器，⏸ = 暂停</li>
                         <li>← → 或 A/D 移动战舰（长按可加速）</li>
                         <li>空格 / J 投掷当前武器</li>
                         <li>数字键 1-3 切换已解锁武器</li>
                         <li>ESC 暂停，Enter 开始游戏</li>
-                        <li>手机端：拖动屏幕移动，点击投放</li>
                     </ul></div>
                     <div class="help-section"><h3>🚀 武器系统</h3><ul>
                         <li>W1 深水炸弹：基础武器，升级后爆炸范围更大（LV1-3）</li>
@@ -259,10 +274,14 @@ html,body { width:100%; height:100%; background:#000; overflow:hidden; font-fami
                 <div class="screen-divider"></div>
                 <button id="startBtn" class="btn" tabindex="0">开 始 作 战</button>
                 <div class="controls-grid">
-                    <div class="control-row"><span class="key-badge">← →</span><span class="control-label">移动战舰</span></div>
-                    <div class="control-row"><span class="key-badge">SPACE</span><span class="control-label">投掷武器</span></div>
-                    <div class="control-row"><span class="key-badge">1-3</span><span class="control-label">切换武器</span></div>
-                    <div class="control-row"><span class="key-badge">ESC</span><span class="control-label">暂停</span></div>
+                    <div class="control-row ctl-key"><span class="key-badge">← →</span><span class="control-label">移动战舰</span></div>
+                    <div class="control-row ctl-key"><span class="key-badge">SPACE</span><span class="control-label">投掷武器</span></div>
+                    <div class="control-row ctl-key"><span class="key-badge">1-3</span><span class="control-label">切换武器</span></div>
+                    <div class="control-row ctl-key"><span class="key-badge">ESC</span><span class="control-label">暂停</span></div>
+                    <div class="control-row ctl-touch"><span class="key-badge">按住拖动</span><span class="control-label">战舰跟手指走</span></div>
+                    <div class="control-row ctl-touch"><span class="key-badge">轻点 / 💣</span><span class="control-label">投掷武器</span></div>
+                    <div class="control-row ctl-touch"><span class="key-badge">W</span><span class="control-label">切换武器</span></div>
+                    <div class="control-row ctl-touch"><span class="key-badge">⏸</span><span class="control-label">暂停</span></div>
                 </div>
                 <p style="margin-top:18px;color:#5f8ba0;font-size:12px;">历史最高分：<span id="menuHighScore" style="color:#ffc93d;font-weight:bold;">0</span></p>
             </div>
@@ -569,6 +588,8 @@ const G = {
     spawnQueue: [], bossActive: false, boss: null, bossEntranceT: 0,
     wavePhase: 0, rainDrops: [], volcanoTimer: 0, lightningTimer: 0, lightningFlash: 0,
     hitStopT: 0, transitionTimer: 0, pendingLevel: 0,
+    // 首次开局的操作引导（触屏“按住拖动”这件事没法自己发现，必须教一次）
+    coachOn: false, coachT: 0, coachSeen: false, coachMoved: false,
 };
 
 /* ===================== 实体：战舰 ===================== */
@@ -2153,6 +2174,12 @@ function update(dt) {
     if (G.doubleScoreT > 0) { G.doubleScoreT -= dt; updateHud(); }
     if (G.freeze > 0) { G.freeze -= dt; updateHud(); }
     if (ship.invulnT > 0) ship.invulnT -= dt;
+    // 引导层必须真的走秒：它的淡入淡出是按剩余时间算 alpha 的，
+    // 忘记递减会让整层 alpha 恒为 0（画了，但完全看不见）。
+    if (G.coachOn) {
+        G.coachT -= dt;
+        if (G.coachT <= 0) { G.coachOn = false; G.coachT = 0; }   // 没拖动过 → 不记“已学会”，下次开局再教一次
+    }
     if (ship.dead) ship.deadT += dt;
     if (G.muzzleT > 0) G.muzzleT -= dt;
 
@@ -2164,6 +2191,16 @@ function update(dt) {
         if (!keys.left && !keys.right) ship.vx *= .88;
         ship.vx = clamp(ship.vx, -ship.speed, ship.speed);
         ship.x = clamp(ship.x + ship.vx, ship.w / 2, W - ship.w / 2);
+        if (keys.left || keys.right) dismissCoach();
+        // 手指跟随：按住屏幕后战舰朝手指所在的 x 缓动过去。
+        // 不用“相对位移 ×1.4”——那会让战舰跑在手指前面，玩家以为拖不动。
+        if (touch.follow) {
+            const want = clamp(touch.targetX, ship.w / 2, W - ship.w / 2);
+            const step = clamp((want - ship.x) * .22, -8.4, 8.4);   // 限死每帧步长，避免瞬移感
+            ship.x = clamp(ship.x + step, ship.w / 2, W - ship.w / 2);
+            ship.vx = clamp(step * .5, -ship.speed, ship.speed);    // 让投出的武器继承横向惯性
+            if (Math.abs(step) > .3) { ship.dir = Math.sign(step); dismissCoach(); }
+        }
         ship.bobY = Math.sin(G.wavePhase + ship.x * .012) * G.scene.waveH * .4;
     }
 
@@ -2234,6 +2271,92 @@ function update(dt) {
 }
 
 /* ===================== 渲染入口 ===================== */
+/* ===================== 首次操作引导 =====================
+ * “按住屏幕左右拖动”这件事在触屏上没有可见线索：手指不在战舰上、也没有按键帽，
+ * 玩家点了半天只会投弹，然后判定“手机不能移动”。所以第一次开局必须显式教一次。
+ */
+const COACH_KEY = 'sub_coach_v1';
+const COACH_SHOWS_KEY = 'sub_coach_shows';
+const COACH_SECS = 4.5;
+const COACH_MAX_SHOWS = 3;   // 没学会就下次再教，但最多打扰三次，不能变成常驻噪音
+function coachSeenStored() {
+    try { return localStorage.getItem(COACH_KEY) === '1'; } catch (e) { return true; }   // 隐私模式下存不了就别反复打扰
+}
+function coachRemember() {
+    try { localStorage.setItem(COACH_KEY, '1'); } catch (e) { }
+}
+function startCoach() {
+    let shows = 0;
+    try { shows = +localStorage.getItem(COACH_SHOWS_KEY) || 0; } catch (e) { shows = COACH_MAX_SHOWS; }
+    G.coachOn = !coachSeenStored() && shows < COACH_MAX_SHOWS;
+    G.coachT = G.coachOn ? COACH_SECS : 0;
+    G.coachMoved = false;
+    if (G.coachOn) {
+        try { localStorage.setItem(COACH_SHOWS_KEY, String(shows + 1)); } catch (e) { }
+        // 教的这几秒里不给玩家上死亡威胁：还没学会移动就被鱼雷打死，等于劝退
+        ship.invulnT = Math.max(ship.invulnT, COACH_SECS + .5);
+    }
+}
+// 玩家真的拖动过一次 = 学会了，永久不再教
+function dismissCoach() {
+    if (!G.coachOn) return;
+    G.coachOn = false; G.coachSeen = true; G.coachMoved = true; G.coachT = 0;
+    coachRemember();
+}
+const isTouchUI = () => window.matchMedia && window.matchMedia('(hover: none), (pointer: coarse)').matches;
+
+function drawCoach() {
+    if (!G.coachOn || G.state !== 'playing' || ship.dead) return;
+    const left = G.coachT;
+    // 前 .35s 淡入、最后 .6s 淡出
+    const a = Math.min(1, (COACH_SECS - left) / .35, left / .6);
+    if (a <= 0) return;
+    const touchUI = isTouchUI();
+    const trackY = surfaceY(W / 2) + 44;
+    const x0 = W * .26, x1 = W * .74;
+    ctx.save();
+    ctx.globalAlpha = a;
+
+    // 轨道：虚线 + 两端箭头，暗示“可以左右走”
+    ctx.strokeStyle = 'rgba(120,235,255,.75)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([9, 9]);
+    ctx.beginPath(); ctx.moveTo(x0, trackY); ctx.lineTo(x1, trackY); ctx.stroke();
+    ctx.setLineDash([]);
+    for (const [tip, dir] of [[x0, -1], [x1, 1]]) {
+        ctx.beginPath();
+        ctx.moveTo(tip, trackY);
+        ctx.lineTo(tip + dir * 14, trackY - 8);
+        ctx.lineTo(tip + dir * 14, trackY + 8);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(120,235,255,.9)'; ctx.fill();
+    }
+
+    // 指示点：沿轨道来回滑，并带两圈扩散波纹——“按住这里拖动”的通用手势语言
+    const px = (x0 + x1) / 2 + Math.sin(G.time * 1.9) * (x1 - x0) / 2;
+    for (let i = 0; i < 2; i++) {
+        const ph = (G.time * 1.1 + i * .5) % 1;
+        ctx.beginPath(); ctx.arc(px, trackY, 9 + ph * 26, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(255,201,61,${(1 - ph) * .55})`;
+        ctx.lineWidth = 2; ctx.stroke();
+    }
+    ctx.beginPath(); ctx.arc(px, trackY, 10, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffc93d'; ctx.fill();
+    ctx.strokeStyle = 'rgba(2,19,31,.85)'; ctx.lineWidth = 2; ctx.stroke();
+
+    // 文案
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 17px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
+    ctx.fillStyle = '#eafcff';
+    ctx.shadowColor = 'rgba(0,0,0,.75)'; ctx.shadowBlur = 6;
+    ctx.fillText(touchUI ? '按住屏幕并左右拖动 —— 战舰跟着手指走' : '← → 方向键 —— 移动战舰', W / 2, trackY + 44);
+    ctx.font = '14px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
+    ctx.fillStyle = '#9fd8f2';
+    ctx.fillText(touchUI ? '轻一下屏幕 = 投弹（拖动时不会误投）' : '空格 = 投弹 · 1~3 切换武器 · ESC 暂停', W / 2, trackY + 68);
+    ctx.shadowBlur = 0;
+    ctx.restore();
+}
+
 function render() {
     ctx.save();
     if (G.shake > 0) ctx.translate(rand(-G.shake, G.shake) * .5, rand(-G.shake, G.shake) * .5);
@@ -2255,6 +2378,7 @@ function render() {
     drawRain();
     drawLightning();
     drawScorePops();
+    drawCoach();
     drawFreezeOverlay();
     // 低生命警告
     if (G.state === 'playing' && G.lives === 1 && !ship.dead && Math.sin(G.time * 5) > 0) {
@@ -2302,30 +2426,37 @@ window.addEventListener('keyup', e => {
     if (k === 'ArrowLeft' || k === 'a' || k === 'A') keys.left = false;
     if (k === 'ArrowRight' || k === 'd' || k === 'D') keys.right = false;
 });
-// 触控：拖动移动 + 点击投放
-let touchX = null, touchStartX = 0, touchDragged = false;
+// 触控：按住跟随移动 + 点按投放
+// 说明：画布铺满视口且逻辑坐标就是 CSS 像素（resize() 里 W = innerWidth），
+// 所以 clientX 基本等于游戏内 x；仍走 getBoundingClientRect 换算，防止以后加内边距。
+const touch = { follow: false, targetX: 0, startX: 0, lastX: 0, dragged: false };
+function gameX(clientX) {
+    const r = canvas.getBoundingClientRect();
+    return (clientX - r.left) * (W / (r.width || W));
+}
 canvas.addEventListener('touchstart', e => {
-    touchX = e.touches[0].clientX;
-    touchStartX = touchX;
-    touchDragged = false;
+    const x = gameX(e.touches[0].clientX);
+    touch.startX = touch.lastX = x;
+    touch.targetX = x;
+    touch.dragged = false;
+    // 这里先不接管战舰：一按就跟随会让“轻点投弹”顺手把船拖走，投弹手感倒退。
+    // 越过 8px 阈值（也就是玩家确实在拖）才切成手指跟随。
+    touch.follow = false;
 }, { passive: true });
 canvas.addEventListener('touchmove', e => {
-    if (touchX === null) return;
     e.preventDefault(); // 拦掉下拉刷新/滑动返回：这层是游戏，不是网页
-    const x = e.touches[0].clientX;
-    if (Math.abs(x - touchStartX) > 8) touchDragged = true;
-    const dx = x - touchX;
-    ship.x = clamp(ship.x + dx * 1.4, ship.w / 2, W - ship.w / 2);
-    ship.dir = dx > 0 ? 1 : -1;
-    ship.vx = clamp(dx * .3, -ship.speed, ship.speed);
-    touchX = x;
-});
+    const x = gameX(e.touches[0].clientX);
+    if (Math.abs(x - touch.startX) > 8) { touch.dragged = true; touch.follow = true; }
+    touch.targetX = x;
+    touch.lastX = x;
+}, { passive: false });
 canvas.addEventListener('touchend', () => {
-    // 点按（没拖动过）才开火——原先一按下就投弹，想微调位置就会误放
-    if (touchDragged) { touchDragged = false; }
-    else if (G.state === 'playing') launchWeapon();
-    touchX = null;
+    // 只有“按下–抬起”之间没拖动过才算点按投弹；拖动过就单纯是移动，不误放
+    if (!touch.dragged && G.state === 'playing') launchWeapon();
+    touch.follow = false;
+    touch.dragged = false;
 });
+canvas.addEventListener('touchcancel', () => { touch.follow = false; touch.dragged = false; });
 document.getElementById('touchBtn').addEventListener('click', () => { if (G.state === 'playing') launchWeapon(); });
 document.getElementById('touchSwap').addEventListener('click', () => {
     if (G.state !== 'playing') return;
@@ -2352,6 +2483,7 @@ function startGame() {
     ship.reset();
     initLevel(1);
     G.state = 'playing';
+    startCoach();
     toast('第 1 关 · ' + G.scene.name);
 }
 function pauseGame() {
