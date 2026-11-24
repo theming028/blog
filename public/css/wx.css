@@ -178,6 +178,19 @@ input, textarea, select { font-family: inherit; }
 .post-feed .p-audio, .post-feed .p-media-el,
 .post-feed .p-foot, .post-feed .acts { margin-left: 54px; }
 .post-feed .p-text { margin-top: 24px; }
+/* 无正文时（.p-head 后面直接接图片/音视频）不能沿用各自的默认 8px 顶距：
+   桌面版 .p-head 高度归零、昵称绝对定位吃掉首行约 20px，8px 会让图片直接压在昵称上。
+   这里补齐成与 .p-text 相同的 24px——有的元素 8px 长在内部 img/.p-media-el 上
+   （.p-single / .p-full / .p-audio），所以给它们 16px，加起来正好 24px，
+   与「有正文」时首个内容块的位置对齐。只在桌面生效：
+   窄屏 .p-head 占实体高度并自带 1em 下间距，再叠 24px 会凭空多出一截空白。 */
+@media (min-width: 481px) {
+  .post-feed .p-head + .p-grid,
+  .post-feed .p-head + .p-media-el { margin-top: 24px; }
+  .post-feed .p-head + .p-single,
+  .post-feed .p-head + .p-full,
+  .post-feed .p-head + .p-audio { margin-top: 16px; }
+}
 /* 文字块纵向堆叠：昵称在上、时间在下 */
 .p-head-txt { display: flex; flex-direction: column; align-items: flex-start; }
 .p-head-txt .p-name { margin-bottom: 0; }
