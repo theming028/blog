@@ -177,12 +177,11 @@ async function uploadImageFile(file) {
   update();
 })();
 
-/* 页面背景图轮换：每次刷新随机选取一张（含花园共 4 项），避免连续两次重复 */
+/* 页面背景图轮换：每次刷新随机选取一张（含花园共 2 项），避免连续两次重复 */
 (function rotateBg() {
   const BG_LIST = [
     'garden',
     '/assets/background-02.avif',
-    '/assets/background-03.avif',
   ];
   const last = sessionStorage.getItem('tm_bg_last');
   let idx = Math.floor(Math.random() * BG_LIST.length);
